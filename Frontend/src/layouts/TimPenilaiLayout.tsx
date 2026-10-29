@@ -29,7 +29,7 @@ const menuItems: MenuItem[] = [
     ],
   },
   { to: '/tim-penilai/tahap-2', label: 'Penilaian Tahap 2', icon: 'chart' },
-  { to: '/tim-penilai/management-ba', label: 'Management BA Inovasi', icon: 'folder' },
+
 ]
 
 function MenuIcon({ name }: { name: string }) {
@@ -84,7 +84,7 @@ export default function TimPenilaiLayout() {
   const user = getUser()
 
   useEffect(() => {
-    if (!user || user.role !== 'TIM_PENILAI_MARVEL') {
+    if (!user || !['TIM_PENILAI_MARVEL', 'TIM_PENILAI_ITJEN'].includes(user.role)) {
       navigate('/login', { replace: true })
     }
   }, [user, navigate])

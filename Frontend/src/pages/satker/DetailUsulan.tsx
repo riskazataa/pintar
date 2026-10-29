@@ -140,6 +140,7 @@ export default function DetailUsulan() {
                       <th className="px-6 py-4">KRITERIA PENILAIAN</th>
                       <th className="px-6 py-4 w-28 text-center">JAWABAN</th>
                       <th className="px-6 py-4 w-64">CATATAN</th>
+                      <th className="px-6 py-4 w-64">LINK</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-100">
@@ -173,6 +174,7 @@ export default function DetailUsulan() {
                             {ans.catatan_string || '- Tidak ada catatan -'}
                           </span>
                         </td>
+                        <td className="px-6 py-4 align-top">{ans.link && /^https?:\/\//i.test(ans.link) ? <a className="break-all text-blue-700 underline" href={ans.link} target="_blank" rel="noreferrer">{ans.link}</a> : '-'}</td>
                         
                       </tr>
                     ))}

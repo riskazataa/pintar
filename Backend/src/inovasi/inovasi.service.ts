@@ -3,6 +3,8 @@ import {
   NotFoundException,
   ForbiddenException,
 } from '@nestjs/common';
+import { WorkflowService } from './workflow.service';
+import { publicWorkflow, Workflow } from './workflow';
 import { PrismaService } from '../prisma/prisma.service';
 import { Prisma, StatusInovasi } from '@prisma/client';
 import { CreateInovasiDto } from './dto/create-inovasi.dto';
@@ -14,7 +16,7 @@ import { SignInovasiDto } from './dto/sign-inovasi.dto';
 
 @Injectable()
 export class InovasiService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(private readonly prisma: PrismaService, private readonly workflowService: WorkflowService) {}
 
   private get includeConfig() {
     return {
@@ -44,6 +46,9 @@ export class InovasiService {
       query;
 
     const where: Prisma.InovasiWhereInput = {};
+    if (query.legacyOnly) where.workflow = { equals: Prisma.DbNull };
+
+    if (user.role === 'SATKER' && !user.satker_id) throw new ForbiddenException('Akun satker belum memiliki satuan kerja');
 
     if (user.role === 'SATKER' && user.satker_id) {
       where.satker_id = user.satker_id;
@@ -92,7 +97,10 @@ export class InovasiService {
     });
 
     return {
-      data,
+      data: data.map(item => {
+        const w = item.workflow as unknown as Workflow | null;
+        return { ...item, workflow: w ? { active: w.active, round: w.round, stages: w.stages.map(s => ({ created: s.created, reviewer_ids: s.reviewer_ids, result: s.result })) } : null };
+      }),
       meta: {
         total,
         page,
@@ -102,7 +110,7 @@ export class InovasiService {
     };
   }
 
-  async findOne(id: number) {
+  async findOne(id: number, user: { sub: number; role: string; satker_id?: number | null }) {
     const inovasi = await this.prisma.inovasi.findUnique({
       where: { id },
       include: this.includeConfig,
@@ -112,6 +120,12 @@ export class InovasiService {
       throw new NotFoundException('Inovasi tidak ditemukan');
     }
 
+    if (user.role === 'SATKER' && inovasi.satker_id !== user.satker_id) throw new ForbiddenException('Anda tidak memiliki akses');
+    if (inovasi.workflow) {
+      this.workflowService.readAccess(inovasi, user);
+      const w = publicWorkflow(inovasi.workflow as unknown as Workflow, user.sub);
+      return { ...inovasi, workflow: w, assessment_answers: w.self.map(a => ({ ...a, id: a.question_id, question: w.config.tahap1.find(q => q.id === a.question_id) })), signatures: [], assigned_users: inovasi.penilai.map(p => ({ id: p.id, nama: p.nama_lengkap })) };
+    }
     // Format assigned_users from penilai relation
     const assignedUsers = inovasi.penilai.map((p) => ({
       id: p.id,
@@ -144,6 +158,8 @@ export class InovasiService {
       throw new NotFoundException('Inovasi tidak ditemukan');
     }
 
+    if (inovasi.workflow) throw new ForbiddenException('Gunakan penugasan reviewer per tahap oleh admin');
+    if (inovasi.status !== 'PENDING') throw new ForbiddenException('Penugasan tidak dapat diubah');
     const users = await this.prisma.user.findMany({
       where: { id: { in: penilaiIds } },
       select: { id: true },
@@ -202,22 +218,26 @@ export class InovasiService {
     };
 
     return this.prisma.$transaction(async (tx) => {
+      if (user.role !== 'SATKER' || !user.satker_id) throw new ForbiddenException('Hanya satker yang dapat mengajukan');
+      const workflowData = await this.workflowService.initialise(tx, dto.template_package_id, (assessment_answers || []).map(a => ({ ...a, catatan_string: a.catatan_string || '', link: a.link || '' })));
       const inovasi = await tx.inovasi.create({
         data: {
           ...inovasiData,
+          ...workflowData,
           status: 'PENDING',
           satker_id: user.satker_id!,
           user_id: user.sub,
         },
       });
 
-      if (assessment_answers && assessment_answers.length > 0) {
+      if (!inovasi.workflow && assessment_answers && assessment_answers.length > 0) {
         await tx.assessmentAnswer.createMany({
           data: assessment_answers.map((a) => ({
             inovasi_id: inovasi.id,
             question_id: a.question_id,
             jawaban_boolean: a.jawaban_boolean,
             catatan_string: a.catatan_string,
+            link: a.link,
           })),
         });
       }
@@ -268,6 +288,7 @@ export class InovasiService {
     inovasiData.status = StatusInovasi.PENDING;
     inovasiData.catatan_perbaikan = null;
 
+    if (existing.workflow) return this.workflowService.resubmit(id, assessment_answers, user, inovasiData);
     return this.prisma.$transaction(async (tx) => {
       await tx.inovasi.update({
         where: { id },
@@ -282,6 +303,7 @@ export class InovasiService {
             question_id: a.question_id,
             jawaban_boolean: a.jawaban_boolean,
             catatan_string: a.catatan_string,
+            link: a.link,
           })),
         });
       }
@@ -302,6 +324,8 @@ export class InovasiService {
     if (!existing) {
       throw new NotFoundException('Inovasi tidak ditemukan');
     }
+
+    if (!['SATKER', 'SUPER_ADMIN'].includes(user.role)) throw new ForbiddenException('Hanya satker pemilik atau admin yang dapat menghapus');
 
     if (existing.status !== 'PERBAIKAN') {
       throw new ForbiddenException(
@@ -332,6 +356,7 @@ export class InovasiService {
       throw new NotFoundException('Inovasi tidak ditemukan');
     }
 
+    if (inovasi.workflow) throw new ForbiddenException('Gunakan aksi assessment per tahap');
     const isPenilai = inovasi.penilai.some((p) => p.id === user.sub);
     if (!isPenilai) {
       throw new ForbiddenException(
@@ -351,6 +376,7 @@ export class InovasiService {
             question_id: a.question_id,
             jawaban_boolean: a.jawaban_boolean,
             catatan_string: a.catatan_string,
+            link: a.link,
           })),
         });
       }
@@ -369,13 +395,14 @@ export class InovasiService {
   ) {
     const existing = await this.prisma.inovasi.findUnique({
       where: { id },
-      select: { id: true, user_id: true, satker_id: true, status: true },
+      select: { id: true, user_id: true, satker_id: true, status: true, workflow: true },
     });
 
     if (!existing) {
       throw new NotFoundException('Inovasi tidak ditemukan');
     }
 
+    if (existing.workflow) throw new ForbiddenException('Gunakan aksi assessment per tahap');
     if (user.role === 'SATKER' && existing.user_id !== user.sub) {
       throw new ForbiddenException('Anda tidak memiliki akses ke inovasi ini');
     }
@@ -396,6 +423,7 @@ export class InovasiService {
             question_id: a.question_id,
             jawaban_boolean: a.jawaban_boolean,
             catatan_string: a.catatan_string,
+            link: a.link,
           })),
         });
       }
@@ -426,6 +454,7 @@ export class InovasiService {
     }
 
     // Cek apakah user ini adalah penilai yang ter-assign pada usulan ini
+    if (inovasi.workflow) throw new ForbiddenException('Gunakan aksi assessment per tahap');
     const isAssignedPenilai = inovasi.penilai.some((p) => p.id === user.sub);
     if (!isAssignedPenilai) {
       throw new ForbiddenException(
@@ -488,6 +517,7 @@ export class InovasiService {
       throw new NotFoundException('Inovasi tidak ditemukan');
     }
 
+    if (inovasi.workflow) throw new ForbiddenException('Gunakan aksi assessment per tahap');
     const isPenilai = inovasi.penilai.some((p) => p.id === user.sub);
     if (!isPenilai) {
       throw new ForbiddenException(

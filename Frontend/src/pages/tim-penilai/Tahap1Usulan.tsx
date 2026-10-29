@@ -141,7 +141,7 @@ export default function Tahap1Usulan() {
     setLoading(true)
     setError('')
     try {
-      const res = await getUsulanList({
+      const res = await getUsulanList({ legacyOnly: true,
         page, limit: 10, search: search || undefined,
         status: statusFilter || undefined,
         startDate: startDate || undefined, endDate: endDate || undefined,

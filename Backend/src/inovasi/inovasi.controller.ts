@@ -46,8 +46,8 @@ export class InovasiController {
 
   @Get(':id')
   @UseGuards(JwtAuthGuard)
-  async findOne(@Param('id', ParseIntPipe) id: number) {
-    return this.inovasiService.findOne(id);
+  async findOne(@Param('id', ParseIntPipe) id: number, @Req() req: any) {
+    return this.inovasiService.findOne(id, req.user);
   }
 
   @Post()

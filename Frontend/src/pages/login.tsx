@@ -26,7 +26,7 @@ export default function Login() {
         navigate('/admin/dashboard')
       } else if (user?.role === 'SATKER' || user?.role === 'satker') {
         navigate('/satker/dashboard')
-      } else if (user?.role === 'TIM_PENILAI_MARVEL') { // <-- TAMBAHAN UNTUK TIM PENILAI
+      } else if (['TIM_PENILAI_MARVEL', 'TIM_PENILAI_ITJEN'].includes(user?.role)) { // <-- TAMBAHAN UNTUK TIM PENILAI
         navigate('/tim-penilai/dashboard')
       } else {
         navigate('/') // Fallback jika role lain

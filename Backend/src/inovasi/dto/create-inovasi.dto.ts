@@ -21,9 +21,17 @@ class AssessmentAnswerDto {
   @IsString()
   @IsOptional()
   catatan_string?: string;
+
+  @IsString()
+  @IsOptional()
+  link?: string;
 }
 
 export class CreateInovasiDto {
+  @IsInt()
+  @IsOptional()
+  template_package_id?: number;
+
   @IsString()
   @IsNotEmpty()
   judul: string;

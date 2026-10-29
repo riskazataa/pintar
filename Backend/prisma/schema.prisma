@@ -92,6 +92,9 @@ model Inovasi {
   created_at            DateTime           @default(now())
   updated_at            DateTime           @updatedAt
   assessment_answers    AssessmentAnswer[]
+  template_package_id   Int?
+  template_package      AssessmentTemplatePackage? @relation(fields: [template_package_id], references: [id], onDelete: Restrict)
+  workflow              Json?
 }
 
 model AssessmentQuestion {
@@ -112,6 +115,17 @@ model AssessmentAnswer {
   question        AssessmentQuestion @relation(fields: [question_id], references: [id])
   jawaban_boolean Boolean
   catatan_string  String?
+  link            String?
+}
+
+model AssessmentTemplatePackage {
+  id           Int       @id @default(autoincrement())
+  nama         String
+  config       Json
+  published_at DateTime?
+  used_at      DateTime?
+  created_at   DateTime  @default(now())
+  inovasi      Inovasi[]
 }
 
 model UsulinSignature {

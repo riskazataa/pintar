@@ -20,6 +20,10 @@ class AssessmentAnswerItemDto {
   @IsString()
   @IsOptional()
   catatan_string?: string;
+
+  @IsString()
+  @IsOptional()
+  link?: string;
 }
 
 export class UpdateAssessmentAnswersDto {

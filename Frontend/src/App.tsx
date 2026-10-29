@@ -20,11 +20,12 @@ import HasilSatker from './pages/satker/Hasil'
 
 // Tim Penilai Marvel
 import TimPenilaiLayout from './layouts/TimPenilaiLayout'
-import ManagementBA from './pages/tim-penilai/ManagementBA'
+import TemplateAssessment from './pages/admin/TemplateAssessment'
+import StageAssessment from './pages/tim-penilai/StageAssessment'
 import Tahap1Usulan from './pages/tim-penilai/Tahap1Usulan'
-import Tahap1Evaluasi from './pages/tim-penilai/Tahap1Evaluasi'
+
 import Tahap1Hasil from './pages/tim-penilai/Tahap1Hasil'
-import Tahap2 from './pages/tim-penilai/Tahap2'
+
 import Tahap1DetailUsulan from './pages/tim-penilai/Tahap1DetailUsulan'
 import Tahap1DetailEvaluasi from './pages/tim-penilai/Tahap1DetailEvaluasi'
 
@@ -40,6 +41,9 @@ function App() {
         <Route path="dashboard" element={<DashboardAnalytics />} />
         <Route path="akun" element={<Akun />} />
         <Route path="organisasi" element={<Organisasi />} />
+        <Route path="templates" element={<TemplateAssessment />} />
+        <Route path="tahap-1" element={<StageAssessment stage={1} />} />
+        <Route path="tahap-2" element={<StageAssessment stage={2} />} />
       </Route>
 
       {/* Rute Satker */}
@@ -60,15 +64,17 @@ function App() {
         <Route path="dashboard" element={<DashboardAnalytics />} />
 
         {/* Penilaian Tahap 1 (Nested Routes) */}
-        <Route path="tahap-1/usulan" element={<Tahap1Usulan />} />
+        <Route path="tahap-1/usulan" element={<StageAssessment stage={1} />} />
+        <Route path="tahap-1/legacy" element={<Tahap1Usulan />} />
+        <Route path="tahap-1/hasil-lama" element={<Tahap1Hasil />} />
         <Route path="tahap-1/usulan/:id" element={<Tahap1DetailUsulan />} />
-        <Route path="tahap-1/evaluasi" element={<Tahap1Evaluasi />} />
+        <Route path="tahap-1/evaluasi" element={<StageAssessment stage={1} />} />
         <Route path="tahap-1/evaluasi/:id" element={<Tahap1DetailEvaluasi />} />
-        <Route path="tahap-1/hasil" element={<Tahap1Hasil />} />
+        <Route path="tahap-1/hasil" element={<StageAssessment stage={1} resultsOnly />} />
 
         {/* Penilaian Tahap 2 & Management BA */}
-        <Route path="tahap-2" element={<Tahap2 />} />
-        <Route path="management-ba" element={<ManagementBA />} />
+        <Route path="tahap-2" element={<StageAssessment stage={2} />} />
+        <Route path="management-ba" element={<TemplateAssessment />} />
       </Route>
 
       {/* Fallback */}
