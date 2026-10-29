@@ -3,8 +3,6 @@ import { ConfigModule } from '@nestjs/config';
 import { JwtModule } from '@nestjs/jwt';
 import { InovasiController } from './inovasi.controller';
 import { InovasiService } from './inovasi.service';
-import { WorkflowService } from './workflow.service';
-import { WorkflowController } from './workflow.controller';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 
 @Module({
@@ -16,8 +14,8 @@ import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
       }),
     }),
   ],
-  controllers: [InovasiController, WorkflowController],
-  providers: [InovasiService, WorkflowService, JwtAuthGuard],
+  controllers: [InovasiController],
+  providers: [InovasiService, JwtAuthGuard],
   exports: [InovasiService],
 })
 export class InovasiModule {}

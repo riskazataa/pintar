@@ -6,15 +6,10 @@ import {
   IsBoolean,
   Min,
 } from 'class-validator';
-import { Type, Transform } from 'class-transformer';
+import { Type } from 'class-transformer';
 import { StatusInovasi } from '@prisma/client';
 
 export class QueryInovasiDto {
-  @IsOptional()
-  @Transform(({ value }) => value === 'true' ? true : value === 'false' ? false : value)
-  @IsBoolean()
-  legacyOnly?: boolean;
-
   @IsOptional()
   @IsString()
   search?: string;
@@ -49,7 +44,7 @@ export class QueryInovasiDto {
   end_date?: string;
 
   @IsOptional()
-  @Transform(({ value }) => value === 'true' ? true : value === 'false' ? false : value)
+  @Type(() => Boolean)
   @IsBoolean()
   assignedToMe?: boolean;
 }

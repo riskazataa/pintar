@@ -9,7 +9,6 @@ export const getUsulanList = (params?: {
   status?: string
   startDate?: string
   endDate?: string
-  legacyOnly?: boolean
   assignedToMe?: boolean
 }) => api.get('/inovasi', { params })
 
@@ -54,7 +53,10 @@ export const getUsulanSelesai = (params?: {
   page?: number
   limit?: number
   search?: string
-}) => api.get('/inovasi', { params: { ...params, status: 'SELESAI_EVALUASI', legacyOnly: true } })
+}) => api.get('/inovasi', { params: { ...params, status: 'SELESAI_EVALUASI' } })
+
+export const downloadHasilEvaluasiPdf = (id: string | number) =>
+  api.get(`/inovasi/${id}/pdf`, { responseType: 'blob' })
 
 export const simpanTandaTangan = async (id: string, data: { 
   usulan_inovasi_id: number; 

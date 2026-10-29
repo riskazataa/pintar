@@ -3,8 +3,7 @@ import {
   NotFoundException,
   ForbiddenException,
 } from '@nestjs/common';
-import { WorkflowService } from './workflow.service';
-import { publicWorkflow, Workflow, normaliseWorkflow } from './workflow';
+import PDFDocument from 'pdfkit';
 import { PrismaService } from '../prisma/prisma.service';
 import { Prisma, StatusInovasi } from '@prisma/client';
 import { CreateInovasiDto } from './dto/create-inovasi.dto';
@@ -16,7 +15,7 @@ import { SignInovasiDto } from './dto/sign-inovasi.dto';
 
 @Injectable()
 export class InovasiService {
-  constructor(private readonly prisma: PrismaService, private readonly workflowService: WorkflowService) {}
+  constructor(private readonly prisma: PrismaService) {}
 
   private get includeConfig() {
     return {
@@ -46,9 +45,6 @@ export class InovasiService {
       query;
 
     const where: Prisma.InovasiWhereInput = {};
-    if (query.legacyOnly) where.workflow = { equals: Prisma.DbNull };
-
-    if (user.role === 'SATKER' && !user.satker_id) throw new ForbiddenException('Akun satker belum memiliki satuan kerja');
 
     if (user.role === 'SATKER' && user.satker_id) {
       where.satker_id = user.satker_id;
@@ -97,10 +93,7 @@ export class InovasiService {
     });
 
     return {
-      data: data.map(item => {
-        const w = item.workflow ? normaliseWorkflow(item.workflow) : null;
-        return { ...item, workflow: w ? { active: w.active, round: w.round, stages: w.stages.map((s, index) => ({ nama: w.config.stages[index].nama, created: s.created, reviewer_ids: s.reviewer_ids, result: s.result })) } : null };
-      }),
+      data,
       meta: {
         total,
         page,
@@ -110,7 +103,7 @@ export class InovasiService {
     };
   }
 
-  async findOne(id: number, user: { sub: number; role: string; satker_id?: number | null }) {
+  async findOne(id: number) {
     const inovasi = await this.prisma.inovasi.findUnique({
       where: { id },
       include: this.includeConfig,
@@ -120,12 +113,6 @@ export class InovasiService {
       throw new NotFoundException('Inovasi tidak ditemukan');
     }
 
-    if (user.role === 'SATKER' && inovasi.satker_id !== user.satker_id) throw new ForbiddenException('Anda tidak memiliki akses');
-    if (inovasi.workflow) {
-      this.workflowService.readAccess(inovasi, user);
-      const w = publicWorkflow(inovasi.workflow as unknown as Workflow, user.sub);
-      return { ...inovasi, workflow: w, assessment_answers: w.self.map(a => ({ ...a, id: a.question_id, question: w.config.stages[0].questions.find(q => q.id === a.question_id) })), signatures: [], assigned_users: inovasi.penilai.map(p => ({ id: p.id, nama: p.nama_lengkap })) };
-    }
     // Format assigned_users from penilai relation
     const assignedUsers = inovasi.penilai.map((p) => ({
       id: p.id,
@@ -137,7 +124,7 @@ export class InovasiService {
       id: sig.id,
       user_id: sig.user_id,
       role: sig.role,
-      nama: sig.nama,
+      nama: sig.nama || sig.user.nama_lengkap,
       nip: sig.nip,
       ttd_image: sig.ttd_image,
       created_at: sig.created_at,
@@ -158,8 +145,6 @@ export class InovasiService {
       throw new NotFoundException('Inovasi tidak ditemukan');
     }
 
-    if (inovasi.workflow) throw new ForbiddenException('Gunakan penugasan reviewer per tahap oleh admin');
-    if (inovasi.status !== 'PENDING') throw new ForbiddenException('Penugasan tidak dapat diubah');
     const users = await this.prisma.user.findMany({
       where: { id: { in: penilaiIds } },
       select: { id: true },
@@ -218,26 +203,22 @@ export class InovasiService {
     };
 
     return this.prisma.$transaction(async (tx) => {
-      if (user.role !== 'SATKER' || !user.satker_id) throw new ForbiddenException('Hanya satker yang dapat mengajukan');
-      const workflowData = await this.workflowService.initialise(tx, dto.template_package_id, (assessment_answers || []).map(a => ({ ...a, catatan_string: a.catatan_string || '', link: a.link || '' })));
       const inovasi = await tx.inovasi.create({
         data: {
           ...inovasiData,
-          ...workflowData,
           status: 'PENDING',
           satker_id: user.satker_id!,
           user_id: user.sub,
         },
       });
 
-      if (!inovasi.workflow && assessment_answers && assessment_answers.length > 0) {
+      if (assessment_answers && assessment_answers.length > 0) {
         await tx.assessmentAnswer.createMany({
           data: assessment_answers.map((a) => ({
             inovasi_id: inovasi.id,
             question_id: a.question_id,
             jawaban_boolean: a.jawaban_boolean,
             catatan_string: a.catatan_string,
-            link: a.link,
           })),
         });
       }
@@ -288,7 +269,6 @@ export class InovasiService {
     inovasiData.status = StatusInovasi.PENDING;
     inovasiData.catatan_perbaikan = null;
 
-    if (existing.workflow) return this.workflowService.resubmit(id, assessment_answers, user, inovasiData);
     return this.prisma.$transaction(async (tx) => {
       await tx.inovasi.update({
         where: { id },
@@ -303,7 +283,6 @@ export class InovasiService {
             question_id: a.question_id,
             jawaban_boolean: a.jawaban_boolean,
             catatan_string: a.catatan_string,
-            link: a.link,
           })),
         });
       }
@@ -324,8 +303,6 @@ export class InovasiService {
     if (!existing) {
       throw new NotFoundException('Inovasi tidak ditemukan');
     }
-
-    if (!['SATKER', 'SUPER_ADMIN'].includes(user.role)) throw new ForbiddenException('Hanya satker pemilik atau admin yang dapat menghapus');
 
     if (existing.status !== 'PERBAIKAN') {
       throw new ForbiddenException(
@@ -356,7 +333,6 @@ export class InovasiService {
       throw new NotFoundException('Inovasi tidak ditemukan');
     }
 
-    if (inovasi.workflow) throw new ForbiddenException('Gunakan aksi assessment per tahap');
     const isPenilai = inovasi.penilai.some((p) => p.id === user.sub);
     if (!isPenilai) {
       throw new ForbiddenException(
@@ -376,7 +352,6 @@ export class InovasiService {
             question_id: a.question_id,
             jawaban_boolean: a.jawaban_boolean,
             catatan_string: a.catatan_string,
-            link: a.link,
           })),
         });
       }
@@ -395,14 +370,13 @@ export class InovasiService {
   ) {
     const existing = await this.prisma.inovasi.findUnique({
       where: { id },
-      select: { id: true, user_id: true, satker_id: true, status: true, workflow: true },
+      select: { id: true, user_id: true, satker_id: true, status: true },
     });
 
     if (!existing) {
       throw new NotFoundException('Inovasi tidak ditemukan');
     }
 
-    if (existing.workflow) throw new ForbiddenException('Gunakan aksi assessment per tahap');
     if (user.role === 'SATKER' && existing.user_id !== user.sub) {
       throw new ForbiddenException('Anda tidak memiliki akses ke inovasi ini');
     }
@@ -423,7 +397,6 @@ export class InovasiService {
             question_id: a.question_id,
             jawaban_boolean: a.jawaban_boolean,
             catatan_string: a.catatan_string,
-            link: a.link,
           })),
         });
       }
@@ -443,6 +416,347 @@ export class InovasiService {
     });
   }
 
+  async generatePdf(id: number): Promise<{ buffer: Buffer; filename: string }> {
+    const inovasi = await this.prisma.inovasi.findUnique({
+      where: { id },
+      include: this.includeConfig,
+    });
+
+    if (!inovasi) {
+      throw new NotFoundException('Inovasi tidak ditemukan');
+    }
+
+    const buffer = await this.buildPdfBuffer(inovasi);
+    const filename = `BA_Inovasi_${this.sanitizeFilename(inovasi.judul)}.pdf`;
+
+    return { buffer, filename };
+  }
+
+  private sanitizeFilename(name: string): string {
+    return (
+      name
+        .replace(/[\\/:*?"<>|]/g, '')
+        .replace(/\s+/g, ' ')
+        .trim() || 'Inovasi'
+    );
+  }
+
+  private buildPdfBuffer(inovasi: any): Promise<Buffer> {
+    return new Promise((resolve) => {
+      const doc = new PDFDocument({ margin: 40, size: 'A4' });
+      const chunks: Buffer[] = [];
+
+      doc.on('data', (chunk) => chunks.push(chunk));
+      doc.on('end', () => resolve(Buffer.concat(chunks)));
+
+      const satker = inovasi.satker?.nama_satker || '-';
+      const judul = inovasi.judul || '-';
+      const answers = inovasi.assessment_answers || [];
+
+      // === 1. Judul dokumen (center + bold) ===
+      doc.font('Times-Bold').fontSize(14);
+      doc.text('Form Seleksi Awal Penilaian Inovasi', 40, 50, {
+        width: 515.28,
+        align: 'center',
+      });
+
+      // === 2. Informasi Satker & Inovasi (rata kiri) ===
+      doc.font('Times-Roman').fontSize(11);
+      doc.text(`Satker: ${satker}`, 40, 74);
+      doc.text(`Inovasi: ${judul}`, 40, 88);
+
+      // === 3. Tabel Evaluasi ===
+      const tableBottom = this.drawEvaluationTable(doc, answers, 104);
+
+      // === 4. Tanda Tangan (tanpa border) ===
+      this.drawSignatureBlocks(doc, inovasi, tableBottom);
+
+      doc.end();
+    });
+  }
+
+  private drawEvaluationTable(
+    doc: PDFKit.PDFDocument,
+    answers: any[],
+    startY: number,
+  ): number {
+    const pageBottom = 800;
+    const paddingX = 4;
+    const paddingY = 4;
+    const fontSize = 10;
+    const minRowHeight = 18;
+
+    // Area lebar yang aman tersedia untuk tabel (dihitung dari margin dokumen)
+    const usableWidth =
+      doc.page.width - doc.page.margins.left - doc.page.margins.right;
+    const startX = doc.page.margins.left;
+
+    // Lebar tiap kolom dalam persentase agar total pas 100% dari usableWidth
+    const colNoWidth = usableWidth * 0.05;
+    const colKriteriaWidth = usableWidth * 0.5;
+    const colYaTidakWidth = usableWidth * 0.15;
+    const colCatatanWidth =
+      usableWidth - (colNoWidth + colKriteriaWidth + colYaTidakWidth);
+
+    // Total lebar tabel keseluruhan (dipakai untuk menutup kotak di ujung kanan)
+    const totalWidth =
+      colNoWidth + colKriteriaWidth + colYaTidakWidth + colCatatanWidth;
+
+    const colWidths = [
+      colNoWidth,
+      colKriteriaWidth,
+      colYaTidakWidth,
+      colCatatanWidth,
+    ];
+    const colXs: number[] = [];
+    let acc = startX;
+    colWidths.forEach((w) => {
+      colXs.push(acc);
+      acc += w;
+    });
+
+    let y = startY;
+
+    const measure = (text: string, width: number, bold: boolean): number => {
+      doc.font(bold ? 'Times-Bold' : 'Times-Roman').fontSize(fontSize);
+      return doc.heightOfString(text || ' ', { width });
+    };
+
+    const drawCells = (
+      cells: { text: string; bold: boolean; halign: 'left' | 'center' }[],
+      cellHeights: number[],
+      rowHeight: number,
+    ) => {
+      const startYVal = y || 0;
+      const rowHeightVal = rowHeight || minRowHeight;
+      const startXVal = startX || 0;
+      const totalWidthVal = totalWidth || 0;
+
+      doc.lineWidth(1);
+      doc.moveTo(startXVal, startYVal).lineTo(startXVal + totalWidthVal, startYVal).stroke();
+
+      // Garis vertikal pembatas antar kolom (semua kolom termasuk batas kiri kanan)
+      // colXs memiliki 4 elemen: [kiri_kol1, kiri_kol2, kiri_kol3, kiri_kol4]
+      // Loop ini menggambar garis di colXs[0], colXs[1], colXs[2], colXs[3]
+      // - colXs[3] adalah garis pembatas antara kolom Ya/Tidak dan Catatan
+      // lalu right border di luar loop: startX + totalWidth
+      for (let i = 0; i < colXs.length; i++) {
+        const xVal = colXs[i] || startXVal;
+        doc.moveTo(xVal, startYVal).lineTo(xVal, startYVal + rowHeightVal).stroke();
+      }
+
+      // Garis vertikal penutup sisi kanan paling luar (right border)
+      const rightBorderX = startXVal + totalWidthVal;
+      doc.moveTo(rightBorderX, startYVal)
+        .lineTo(rightBorderX, startYVal + rowHeightVal)
+        .stroke();
+
+      // Gambar border bawah untuk setiap cell
+      cells.forEach((cell, i) => {
+        const textY =
+          startYVal + Math.max(paddingY, (rowHeightVal - (cellHeights[i] || 0)) / 2);
+        doc.font(cell.bold ? 'Times-Bold' : 'Times-Roman').fontSize(fontSize);
+        doc.text(cell.text || '', (colXs[i] || startXVal) + paddingX, textY, {
+          width: (colWidths[i] || 0) - paddingX * 2,
+          align: cell.halign,
+          lineBreak: true,
+        });
+        // Gambar border bawah cell menggunakan colXs[i+1] atau right border sebagai fallback
+        const nextX = colXs[i + 1] || rightBorderX;
+        doc.moveTo(colXs[i] || startXVal, startYVal + rowHeightVal).lineTo(nextX, startYVal + rowHeightVal).stroke();
+      });
+
+      // Gambar border bawah terakhir yang mencakup sel terakhir
+      doc.moveTo(startXVal, startYVal + rowHeightVal).lineTo(startXVal + totalWidthVal, startYVal + rowHeightVal).stroke();
+
+      y += rowHeightVal;
+    };
+
+    const headerCells = [
+      { text: 'No', bold: true, halign: 'center' as const },
+      {
+        text: 'Kriteria Penilaian Seleksi Awal',
+        bold: true,
+        halign: 'center' as const,
+      },
+      { text: 'Ya/Tidak (V)', bold: true, halign: 'center' as const },
+      { text: 'Catatan', bold: true, halign: 'center' as const },
+    ];
+
+    const renderHeader = () => {
+      const cellHeights = headerCells.map((c, i) =>
+        measure(c.text, colWidths[i] - paddingX * 2, c.bold),
+      );
+      const rowHeight = Math.max(
+        minRowHeight,
+        ...cellHeights.map((h) => h + paddingY * 2),
+      );
+      drawCells(headerCells, cellHeights, rowHeight);
+    };
+
+    const renderRow = (
+      cells: { text: string; bold: boolean; halign: 'left' | 'center' }[],
+    ) => {
+      const cellHeights = cells.map((c, i) =>
+        measure(c.text, colWidths[i] - paddingX * 2, c.bold),
+      );
+      const rowHeight = Math.max(
+        minRowHeight,
+        ...cellHeights.map((h) => h + paddingY * 2),
+      );
+
+      if (y + rowHeight > pageBottom) {
+        doc.addPage();
+        y = 50;
+        renderHeader();
+      }
+
+      drawCells(cells, cellHeights, rowHeight);
+    };
+
+    renderHeader();
+
+    const parents = answers.filter((a: any) => !a.question?.parent_id);
+
+    if (parents.length === 0) {
+      renderRow([
+        { text: '', bold: false, halign: 'center' },
+        { text: 'Belum ada data penilaian.', bold: false, halign: 'left' },
+        { text: '', bold: false, halign: 'center' },
+        { text: '', bold: false, halign: 'left' },
+      ]);
+    } else {
+      parents.forEach((parent: any, pIdx: number) => {
+        const children = answers.filter(
+          (a: any) => a.question?.parent_id === parent.question?.id,
+        );
+
+        renderRow([
+          { text: String(pIdx + 1), bold: true, halign: 'center' },
+          {
+            text: parent.question?.pertanyaan || '-',
+            bold: true,
+            halign: 'left',
+          },
+          {
+            text: parent.jawaban_boolean ? 'V' : '',
+            bold: true,
+            halign: 'center',
+          },
+          {
+            text: parent.catatan_string || '',
+            bold: false,
+            halign: 'left',
+          },
+        ]);
+
+        children.forEach((child: any, cIdx: number) => {
+          const letter = String.fromCharCode(97 + cIdx);
+          renderRow([
+            { text: `${pIdx + 1}.${letter}`, bold: false, halign: 'center' },
+            {
+              text: `    ${letter}. ${child.question?.pertanyaan || '-'}`,
+              bold: false,
+              halign: 'left',
+            },
+            {
+              text: child.jawaban_boolean ? 'V' : '',
+              bold: false,
+              halign: 'center',
+            },
+            {
+              text: child.catatan_string || '',
+              bold: false,
+              halign: 'left',
+            },
+          ]);
+        });
+      });
+    }
+
+    // Garis bawah penutup tabel
+    doc.lineWidth(1);
+    doc.moveTo(startX, y).lineTo(startX + totalWidth, y).stroke();
+
+    return y;
+  }
+
+  private drawSignatureBlocks(
+    doc: PDFKit.PDFDocument,
+    inovasi: any,
+    tableBottom: number,
+  ) {
+    const pageWidth = 595.28;
+    const marginX = 40;
+    const tableWidth = pageWidth - marginX * 2;
+    const pageBottom = 800;
+
+    const ttdGap = 4 * 13.2; // ruang kosong untuk coretan (setara 4 baris)
+
+    let y = tableBottom + 45;
+    if (y + 60 > pageBottom) {
+      doc.addPage();
+      y = 60;
+    }
+
+    // Ambil semua tanda tangan dari usulan_signatures
+    const signatures = inovasi.usulan_signatures || [];
+
+    const centerXPositions = [
+      marginX + tableWidth * 0.25,
+      marginX + tableWidth * 0.5,
+      marginX + tableWidth * 0.75,
+    ];
+
+    const startX = marginX;
+    const usableWidth = tableWidth;
+
+    signatures.forEach((sig, idx) => {
+      const centerX = centerXPositions[idx] || marginX + tableWidth / 2;
+      const blockHeight = 18 + ttdGap + 14 + 16;
+
+      if (y + blockHeight > pageBottom) {
+        doc.addPage();
+        y = 60;
+      }
+
+      const ttdTop = y + 18;
+      const nameY = ttdTop + ttdGap + 8;
+      const nipY = nameY + 14;
+
+      // Nama Jabatan
+      doc.font('Times-Bold').fontSize(11);
+      const jabatanText = sig.role === 'SKI' ? 'SKI' : sig.role === 'Timker Manajemen Risiko' ? 'Timker Manajemen Risiko' : sig.role === 'Reformasi Birokrasi' ? 'Reformasi Birokrasi' : 'Monev';
+      doc.text(jabatanText, centerX, y);
+
+      // Ruang kosong / gambar tanda tangan
+      if (sig.ttd_image) {
+        try {
+          const base64 = sig.ttd_image.replace(/^data:image\/\w+;base64,/, '');
+          doc.image(Buffer.from(base64, 'base64'), centerX - 70, ttdTop, {
+            fit: [140, ttdGap],
+            align: 'center',
+            valign: 'center',
+          });
+        } catch {
+          // biarkan ruang tanda tangan kosong bila gambar gagal dimuat
+        }
+      }
+
+      // Nama Lengkap
+      doc.font('Times-Roman').fontSize(11);
+      if (sig.nama) {
+        doc.text(sig.nama, centerX, nameY);
+      }
+
+      // NIP
+      doc.font('Times-Roman').fontSize(10);
+      doc.text(`NIP. ${sig.nip || ''}`, centerX, nipY);
+
+      y += blockHeight + 20;
+    });
+  }
+
   async sign(id: number, dto: SignInovasiDto, user: { sub: number }) {
     const inovasi = await this.prisma.inovasi.findUnique({
       where: { id },
@@ -454,7 +768,6 @@ export class InovasiService {
     }
 
     // Cek apakah user ini adalah penilai yang ter-assign pada usulan ini
-    if (inovasi.workflow) throw new ForbiddenException('Gunakan aksi assessment per tahap');
     const isAssignedPenilai = inovasi.penilai.some((p) => p.id === user.sub);
     if (!isAssignedPenilai) {
       throw new ForbiddenException(
@@ -474,13 +787,15 @@ export class InovasiService {
       throw new ForbiddenException('Anda sudah menandatangani usulan ini');
     }
 
+    const signer = await this.prisma.user.findUniqueOrThrow({ where: { id: user.sub }, select: { nama_lengkap: true } });
+
     // Buat entri tanda tangan baru di usulan_signatures
     await this.prisma.usulinSignature.create({
       data: {
         usulan_id: id,
         user_id: user.sub,
         role: dto.jabatan, // menggunakan jabatan sebagai role
-        nama: '', // nama tidak diterima dari payload baru, bisa dikosongkan atau diisi sesuai kebutuhan
+        nama: signer.nama_lengkap,
         nip: dto.nip,
         jabatan: dto.jabatan,
         ttd_image: dto.signature_data,
@@ -517,7 +832,6 @@ export class InovasiService {
       throw new NotFoundException('Inovasi tidak ditemukan');
     }
 
-    if (inovasi.workflow) throw new ForbiddenException('Gunakan aksi assessment per tahap');
     const isPenilai = inovasi.penilai.some((p) => p.id === user.sub);
     if (!isPenilai) {
       throw new ForbiddenException(

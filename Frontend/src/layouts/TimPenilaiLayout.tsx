@@ -20,8 +20,16 @@ interface MenuItem {
 
 const menuItems: MenuItem[] = [
   { to: '/tim-penilai/dashboard', label: 'Dashboard', icon: 'dashboard' },
-  { to: '/tim-penilai/inovasi', label: 'Inovasi', icon: 'clipboard' },
-
+  {
+    label: 'Penilaian Tahap 1', icon: 'clipboard',
+    children: [
+      { to: '/tim-penilai/tahap-1/usulan', label: 'Usulan Inovasi' },
+      { to: '/tim-penilai/tahap-1/evaluasi', label: 'Evaluasi' },
+      { to: '/tim-penilai/tahap-1/hasil', label: 'Hasil' },
+    ],
+  },
+  { to: '/tim-penilai/tahap-2', label: 'Penilaian Tahap 2', icon: 'chart' },
+  { to: '/tim-penilai/management-ba', label: 'Management BA Inovasi', icon: 'folder' },
 ]
 
 function MenuIcon({ name }: { name: string }) {
@@ -76,7 +84,7 @@ export default function TimPenilaiLayout() {
   const user = getUser()
 
   useEffect(() => {
-    if (!user || !['TIM_PENILAI_MARVEL', 'TIM_PENILAI_ITJEN'].includes(user.role)) {
+    if (!user || user.role !== 'TIM_PENILAI_MARVEL') {
       navigate('/login', { replace: true })
     }
   }, [user, navigate])

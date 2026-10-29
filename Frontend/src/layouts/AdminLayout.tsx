@@ -14,8 +14,6 @@ const getUser = () => {
 const menuItems = [
   { to: '/admin/dashboard', label: 'Dashboard', icon: 'dashboard' },
   { to: '/admin/akun', label: 'Akun', icon: 'users' },
-  { to: '/admin/templates', label: 'Template Assessment', icon: 'building' },
-  { to: '/admin/inovasi', label: 'Inovasi', icon: 'building' },
   { to: '/admin/organisasi', label: 'Organisasi', icon: 'building' },
 ]
 

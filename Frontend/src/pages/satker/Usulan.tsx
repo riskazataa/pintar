@@ -7,9 +7,8 @@ import {
   createUsulan,
   updateUsulan,
   deleteUsulan,
+  getAssessmentQuestions,
 } from '../../services/inovasi.service'
-
-import { activePackage } from '../../services/workflow.service'
 
 interface UsulanItem {
   id: string
@@ -36,7 +35,6 @@ interface AssessmentQuestion {
 }
 
 interface AnswerEntry {
-  link?: string
   question_id: string; checked: boolean; catatan: string
 }
 
@@ -160,7 +158,6 @@ export default function Usulan() {
   const [penanggungJawab, setPenanggungJawab] = useState('')
   const [noWhatsapp, setNoWhatsapp] = useState('')
   
-  const [templateId, setTemplateId] = useState<number | null>(null)
   const [questions, setQuestions] = useState<AssessmentQuestion[]>([])
   const [answers, setAnswers] = useState<Record<string, AnswerEntry>>({})
   const [questionsLoading, setQuestionsLoading] = useState(false)
@@ -189,19 +186,20 @@ export default function Usulan() {
   const loadQuestions = async () => {
     setQuestionsLoading(true)
     try {
+      const { data: qData } = await getAssessmentQuestions()
       let flatQuestions: AssessmentQuestion[] = []
-      if (detailUsulan?.workflow) {
-        flatQuestions = detailUsulan.workflow.config.stages[0].questions
-        setTemplateId(detailUsulan.template_package_id)
-      } else if (detailUsulan) {
-        flatQuestions = (detailUsulan.assessment_answers || []).map((a: any) => a.question)
-        setTemplateId(null)
-      } else {
-        const { data: pack } = await activePackage()
-        if (!pack) throw new Error('Admin belum memublikasikan template assessment')
-        setTemplateId(pack.id)
-        flatQuestions = pack.config.stages[0].questions as unknown as AssessmentQuestion[]
-      }
+      const rawList = Array.isArray(qData) ? qData : qData.data ?? []
+
+      // PERBAIKAN 3: Flattening data questions tanpa mempedulikan kategori
+      rawList.forEach((item: any) => {
+        flatQuestions.push({ id: item.id, pertanyaan: item.pertanyaan, parent_id: item.parent_id || null })
+        if (item.children && Array.isArray(item.children)) {
+          item.children.forEach((child: any) => {
+            flatQuestions.push({ id: child.id, pertanyaan: child.pertanyaan, parent_id: item.id })
+          })
+        }
+      })
+
       setQuestions(flatQuestions)
       
       const existingAnswers = detailUsulan?.assessment_answers || []
@@ -215,15 +213,12 @@ export default function Usulan() {
           question_id: safeId,
           checked: existing ? (existing.jawaban_boolean ?? false) : false,
           catatan: existing ? (existing.catatan_string || '') : '',
-          link: existing?.link || '',
         }
       })
       
       setAnswers(init)
-    } catch (e) {
-      setQuestions([])
-      setTemplateId(null)
-      alert(e instanceof Error ? e.message : 'Gagal memuat template')
+    } catch { 
+      setQuestions([]) 
     } finally { 
       setQuestionsLoading(false) 
     }
@@ -264,12 +259,10 @@ export default function Usulan() {
       return
     }
 
-    if ((!templateId && !editingId) || questions.length === 0) { alert('Template assessment belum tersedia. Hubungi admin.'); return }
     setSaving(true)
     const payload = {
-      template_package_id: templateId || undefined,
       judul: namaInovasi, tahun: parseInt(tahun, 10), jenis_inovasi: jenisInovasi === 'Lainnya' ? jenisLainnya : jenisInovasi, kriteria_inovasi: kriteria, link_data_dukung: linkDataDukung, pic_nama: penanggungJawab, pic_telp: noWhatsapp,
-      assessment_answers: Object.values(answers).map(a => ({ question_id: parseInt(a.question_id, 10) || 0, jawaban_boolean: a.checked, catatan_string: a.catatan, link: a.link || '' })),
+      assessment_answers: Object.values(answers).map(a => ({ question_id: parseInt(a.question_id, 10) || 0, jawaban_boolean: a.checked, catatan_string: a.catatan })),
     }
 
     try {
@@ -499,7 +492,7 @@ export default function Usulan() {
                             <th className="px-6 py-4 w-16 text-center">NO</th>
                             <th className="px-6 py-4">KRITERIA PENILAIAN</th>
                             <th className="px-6 py-4 w-24 text-center">YA</th>
-                            <th className="px-6 py-4 w-64">CATATAN</th><th className="px-6 py-4 w-64">LINK</th>
+                            <th className="px-6 py-4 w-64">CATATAN</th>
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-gray-100">
@@ -531,7 +524,6 @@ export default function Usulan() {
                                     className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none"
                                   />
                                 </td>
-                                <td className="px-6 py-4 align-top"><input aria-label={`Link ${no}`} type="url" placeholder="https://..." className="w-full rounded-lg border px-3 py-2" value={ans.link || ''} onChange={e => setAnswers(prev => ({ ...prev, [safeId]: { ...prev[safeId], link: e.target.value } }))} /></td>
                               </tr>
                             )
                           })}

@@ -12,7 +12,10 @@ import {
   UseGuards,
   ParseIntPipe,
   Request,
+  Res,
+  Header,
 } from '@nestjs/common';
+import type { Response } from 'express';
 import { InovasiService } from './inovasi.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { CreateInovasiDto } from './dto/create-inovasi.dto';
@@ -44,10 +47,22 @@ export class InovasiController {
     return this.inovasiService.findHasilEvaluasi();
   }
 
+  @Get(':id/pdf')
+  @UseGuards(JwtAuthGuard)
+  @Header('Content-Type', 'application/pdf')
+  async generatePdf(
+    @Param('id', ParseIntPipe) id: number,
+    @Res() res: Response,
+  ) {
+    const { buffer, filename } = await this.inovasiService.generatePdf(id);
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    res.send(buffer);
+  }
+
   @Get(':id')
   @UseGuards(JwtAuthGuard)
-  async findOne(@Param('id', ParseIntPipe) id: number, @Req() req: any) {
-    return this.inovasiService.findOne(id, req.user);
+  async findOne(@Param('id', ParseIntPipe) id: number) {
+    return this.inovasiService.findOne(id);
   }
 
   @Post()
