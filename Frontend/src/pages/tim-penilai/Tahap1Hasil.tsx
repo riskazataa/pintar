@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback } from 'react'
 import axios from 'axios'
-import { getUsulanSelesai, getUsulanDetail, downloadHasilEvaluasiPdf } from '../../services/inovasi.service'
+import { getUsulanSelesai, getUsulanDetail } from '../../services/inovasi.service'
 import ExcelJS from 'exceljs'
 import { saveAs } from 'file-saver'
 
@@ -59,41 +59,6 @@ function Paginator({ meta, onPage }: { meta: PaginationMeta; onPage: (p: number)
       </div>
     </div>
   )
-}
-
-function sanitizeFileName(name: string) {
-  return name
-    .replace(/[\\/:*?"<>|]/g, '')
-    .replace(/\s+/g, ' ')
-    .trim() || 'Inovasi'
-}
-
-function downloadBlob(blob: Blob, fileName: string) {
-  const url = URL.createObjectURL(new Blob([blob], { type: 'application/pdf' }))
-  const link = document.createElement('a')
-  link.href = url
-  link.download = fileName
-  document.body.appendChild(link)
-  link.click()
-  document.body.removeChild(link)
-  URL.revokeObjectURL(url)
-}
-
-async function getErrorMessage(err: unknown): Promise<string> {
-  if (axios.isAxiosError(err)) {
-    const data = err.response?.data
-    if (data instanceof Blob) {
-      try {
-        const text = await data.text()
-        const parsed = JSON.parse(text)
-        return parsed?.message || parsed?.error || err.message
-      } catch {
-        return err.message
-      }
-    }
-    return (data as { message?: string })?.message || err.message
-  }
-  return err instanceof Error ? err.message : 'Terjadi kesalahan'
 }
 
 function exportToExcel(data: any) {
@@ -203,75 +168,40 @@ function exportToExcel(data: any) {
     })
   })
 
-  // === Tanda Tangan ===
-  const lastDataRow = 6 + totalDataRows
-  const signStartRow = lastDataRow + 3
-
-  // Baris judul TTD
-  const timkerTitleCell = worksheet.getRow(signStartRow).getCell(2)
-  timkerTitleCell.value = 'Timker'
-  timkerTitleCell.font = { bold: true, size: 12, name: 'Times New Roman' }
-  timkerTitleCell.alignment = { horizontal: 'center', vertical: 'middle' }
-
-  const skiTitleCell = worksheet.getRow(signStartRow).getCell(4)
-  skiTitleCell.value = 'SKI'
-  skiTitleCell.font = { bold: true, size: 12, name: 'Times New Roman' }
-  skiTitleCell.alignment = { horizontal: 'center', vertical: 'middle' }
-
-  // Gambar TTD
-  if (data.timker_ttd_image) {
-    try {
-      const base64Data = data.timker_ttd_image.replace(/^data:image\/\w+;base64,/, '')
-      const imageId = workbook.addImage({ base64: base64Data, extension: 'png' })
-      worksheet.addImage(imageId, {
-        tl: { col: 1, row: signStartRow },
-        ext: { width: 130, height: 55 },
-      })
-    } catch {
-      console.warn('Gagal memuat gambar TTD Timker')
+  // API detail dan PDF menggunakan daftar signatures yang sama.
+  const signatures = data.signatures ?? data.usulan_signatures ?? []
+  const signStartRow = 9 + totalDataRows
+  signatures.forEach((signature: any, index: number) => {
+    const column = index % 2 === 0 ? 2 : 4
+    const titleRow = signStartRow + Math.floor(index / 2) * 9
+    const setText = (row: number, value: string, bold = false) => {
+      const cell = worksheet.getRow(row).getCell(column)
+      cell.value = value
+      cell.font = { name: 'Times New Roman', size: 11, bold }
+      cell.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true }
     }
-  }
-
-  if (data.ski_ttd_image) {
-    try {
-      const base64Data = data.ski_ttd_image.replace(/^data:image\/\w+;base64,/, '')
-      const imageId = workbook.addImage({ base64: base64Data, extension: 'png' })
-      worksheet.addImage(imageId, {
-        tl: { col: 3, row: signStartRow },
-        ext: { width: 130, height: 55 },
-      })
-    } catch {
-      console.warn('Gagal memuat gambar TTD SKI')
+    setText(titleRow, signature.role || '-', true)
+    worksheet.getRow(titleRow).height = 30
+    for (let row = titleRow + 1; row <= titleRow + 3; row++) {
+      worksheet.getRow(row).height = 22
     }
-  }
-
-  // Baris Nama & NIP (di bawah gambar)
-  const nameRow = signStartRow + 4
-
-  if (data.timker_nama) {
-    worksheet.getRow(nameRow).getCell(2).value = data.timker_nama
-    worksheet.getRow(nameRow).getCell(2).alignment = { horizontal: 'center' }
-    worksheet.getRow(nameRow).getCell(2).font = { size: 11, name: 'Times New Roman' }
-  }
-  if (data.timker_nip) {
-    worksheet.getRow(nameRow + 1).getCell(2).value = `NIP. ${data.timker_nip}`
-    worksheet.getRow(nameRow + 1).getCell(2).alignment = { horizontal: 'center' }
-    worksheet.getRow(nameRow + 1).getCell(2).font = { size: 10, name: 'Times New Roman' }
-  }
-
-  if (data.ski_nama) {
-    worksheet.getRow(nameRow).getCell(4).value = data.ski_nama
-    worksheet.getRow(nameRow).getCell(4).alignment = { horizontal: 'center' }
-    worksheet.getRow(nameRow).getCell(4).font = { size: 11, name: 'Times New Roman' }
-  }
-  if (data.ski_nip) {
-    worksheet.getRow(nameRow + 1).getCell(4).value = `NIP. ${data.ski_nip}`
-    worksheet.getRow(nameRow + 1).getCell(4).alignment = { horizontal: 'center' }
-    worksheet.getRow(nameRow + 1).getCell(4).font = { size: 10, name: 'Times New Roman' }
-  }
+    if (signature.ttd_image) {
+      const match = /^data:image\/(png|jpe?g|gif);base64,/i.exec(signature.ttd_image)
+      if (!match) throw new Error('Format gambar tanda tangan tidak didukung')
+      const extension = match[1].toLowerCase() === 'jpg' ? 'jpeg' : match[1].toLowerCase()
+      const imageId = workbook.addImage({ base64: signature.ttd_image, extension: extension as 'png' | 'jpeg' | 'gif' })
+      worksheet.addImage(imageId, {
+        tl: { col: column === 2 ? 1.3 : 3.25, row: titleRow + 0.1 },
+        ext: { width: 140, height: 55 },
+        editAs: 'oneCell',
+      })
+    }
+    setText(titleRow + 4, signature.nama || '-')
+    setText(titleRow + 5, 'NIP. ' + (signature.nip || '-'))
+  })
 
   // Finalisasi & Download
-  workbook.xlsx.writeBuffer().then((buffer) => {
+  return workbook.xlsx.writeBuffer().then((buffer) => {
     const blob = new Blob([buffer], {
       type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
     })
@@ -311,32 +241,14 @@ export default function Tahap1Hasil() {
 
   const handleSearch = () => { setPage(1); fetchList() }
 
-  const handleExportPdf = async (item: UsulanItem) => {
-    setExportingId(item.id)
-    try {
-      const res = await downloadHasilEvaluasiPdf(item.id)
-      const blob: Blob = res.data
-      if (blob.type !== 'application/pdf') {
-        throw new Error('Respons dari server bukan file PDF')
-      }
-      const judul = item.judul || item.nama_inovasi || 'Inovasi'
-      downloadBlob(blob, `BA_Inovasi_${sanitizeFileName(judul)}.pdf`)
-    } catch (err: unknown) {
-      const message = await getErrorMessage(err)
-      alert(message || 'Gagal mengunduh file PDF. Silakan coba lagi.')
-    } finally {
-      setExportingId(null)
-    }
-  }
-
   const handleExportExcel = async (item: UsulanItem) => {
     setExportingId(item.id)
     try {
       const res = await getUsulanDetail(item.id)
       const detailData = res.data?.data || res.data
-      exportToExcel(detailData)
+      await exportToExcel(detailData)
     } catch {
-      alert('Gagal memuat detail usulan untuk export Excel.')
+      alert('Gagal mengekspor Excel. Pastikan data dan gambar tanda tangan valid, lalu coba lagi.')
     } finally {
       setExportingId(null)
     }
@@ -406,18 +318,6 @@ export default function Tahap1Hasil() {
                     </td>
                     <td className="whitespace-nowrap px-4 py-3.5 text-right sm:px-6">
                       <div className="flex items-center justify-end gap-1">
-                        <button
-                          onClick={() => handleExportPdf(item)}
-                          disabled={exportingId === item.id}
-                          className="inline-flex items-center gap-1 rounded-lg border border-red-200 bg-red-50 px-2.5 py-1.5 text-xs font-medium text-red-700 transition hover:bg-red-100 disabled:opacity-50 disabled:cursor-not-allowed"
-                        >
-                          {exportingId === item.id ? (
-                            <svg className="h-3.5 w-3.5 animate-spin" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"></path></svg>
-                          ) : (
-                            <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m2.25 0H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z" /></svg>
-                          )}
-                          {exportingId === item.id ? 'Memproses...' : 'PDF'}
-                        </button>
                         <button
                           onClick={() => handleExportExcel(item)}
                           disabled={exportingId === item.id}

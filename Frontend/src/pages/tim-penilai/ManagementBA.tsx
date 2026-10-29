@@ -33,13 +33,14 @@ export default function ManagementBA() {
 
  const fetchQuestions = useCallback(async () => {
   setLoading(true)
+  setError('')
   try {
     const res = await getAssessmentQuestions()
     // Langsung simpan data tree (bersarang) dari backend ke state
     const rawData = Array.isArray(res.data) ? res.data : res.data.data ?? []
     setQuestions(rawData)
-  } catch (err) {
-    // handle error...
+  } catch (err: unknown) {
+    setError(axios.isAxiosError(err) ? err.response?.data?.message || 'Gagal memuat pertanyaan' : 'Terjadi kesalahan')
   } finally {
     setLoading(false)
   }
@@ -99,8 +100,6 @@ export default function ManagementBA() {
       setDeleting(false)
     }
   }
-
-  const parents = questions.filter((q) => !q.parent_id)
 
   return (
     <div className="space-y-6">
