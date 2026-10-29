@@ -1,0 +1,130 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum Role {
+  SUPER_ADMIN
+  TIM_PENILAI_MARVEL
+  TIM_PENILAI_ITJEN
+  SATKER
+}
+
+enum RegistrationStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+model Satker {
+  id          Int       @id @default(autoincrement())
+  nama_satker String
+  users       User[]
+  inovasi     Inovasi[]
+}
+
+model User {
+  id                Int                @id @default(autoincrement())
+  email             String             @unique
+  password          String
+  nama_lengkap      String
+  role              Role
+  status_registrasi RegistrationStatus @default(PENDING)
+  satker_id         Int?
+  satker            Satker?            @relation(fields: [satker_id], references: [id])
+
+  // 1. Inovasi yang DIBUAT oleh user ini
+  inovasi           Inovasi[]          @relation("PembuatInovasi")
+
+  // 2. TAMBAHAN: Inovasi yang DINILAI oleh user ini
+  inovasi_dinilai   Inovasi[]          @relation("PenugasanInovasi")
+
+  // 3. TAMBAHAN: Tanda tangan usulan ini
+  usulan_signatures UsulinSignature[]
+}
+
+enum StatusInovasi {
+  PENDING
+  APPROVED
+  REJECTED
+  PERBAIKAN
+  SELESAI_EVALUASI
+}
+
+model Inovasi {
+  id                    Int                @id @default(autoincrement())
+  judul                 String
+  tahun                 Int
+  jenis_inovasi         String
+  jenis_inovasi_lainnya String?
+  kriteria_inovasi      String[]
+  link_data_dukung      String
+  pic_nama              String
+  pic_telp              String
+  status                StatusInovasi      @default(PENDING)
+  satker_id             Int
+  satker                Satker             @relation(fields: [satker_id], references: [id])
+
+  // 1. Relasi ke pembuat inovasi (User)
+  user_id               Int
+  user                  User               @relation("PembuatInovasi", fields: [user_id], references: [id])
+
+  // 2. TAMBAHAN: Relasi ke penilai inovasi (User - Many to Many)
+  penilai               User[]             @relation("PenugasanInovasi")
+
+  // 3. TAMBAHAN: Relasi ke tanda tangan usulan
+  usulan_signatures     UsulinSignature[]
+
+  catatan_perbaikan     String?
+
+  ski_nama              String?
+  ski_nip               String?
+  ski_signed_at         DateTime?
+  ski_ttd_image         String?
+  timker_nama           String?
+  timker_nip            String?
+  timker_signed_at      DateTime?
+  timker_ttd_image      String?
+
+  created_at            DateTime           @default(now())
+  updated_at            DateTime           @updatedAt
+  assessment_answers    AssessmentAnswer[]
+}
+
+model AssessmentQuestion {
+  id         Int                @id @default(autoincrement())
+  pertanyaan String
+  is_active  Boolean            @default(true)
+  parent_id  Int?
+  parent     AssessmentQuestion? @relation("SubQuestions", fields: [parent_id], references: [id], onDelete: Cascade)
+  children   AssessmentQuestion[] @relation("SubQuestions")
+  answers    AssessmentAnswer[]
+}
+
+model AssessmentAnswer {
+  id              Int                @id @default(autoincrement())
+  inovasi_id      Int
+  inovasi         Inovasi            @relation(fields: [inovasi_id], references: [id], onDelete: Cascade)
+  question_id     Int
+  question        AssessmentQuestion @relation(fields: [question_id], references: [id])
+  jawaban_boolean Boolean
+  catatan_string  String?
+}
+
+model UsulinSignature {
+  id          Int       @id @default(autoincrement())
+  usulan_id   Int
+  user_id     Int
+  role        String
+  nama        String
+  nip         String
+  jabatan     String
+  ttd_image   String?
+  created_at  DateTime  @default(now())
+
+  usulan      Inovasi   @relation(fields: [usulan_id], references: [id], onDelete: Cascade)
+  user        User      @relation(fields: [user_id], references: [id])
+}
