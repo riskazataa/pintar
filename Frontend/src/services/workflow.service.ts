@@ -17,8 +17,7 @@ export interface Mapping {
   target_id: number
 }
 export interface Config {
-  tahap1: Question[]
-  tahap2: Question[]
+  stages: { nama: string; questions: Question[] }[]
   mappings: Mapping[]
 }
 export interface Signature {

@@ -13,7 +13,7 @@ const getUser = () => {
 
 const menuItems = [
   { to: '/satker/dashboard', label: 'Dashboard', icon: 'dashboard' },
-  { to: '/satker/usulan', label: 'Usulan Inovasi', icon: 'document' },
+  { to: '/satker/inovasi', label: 'Inovasi', icon: 'document' },
   { to: '/satker/hasil', label: 'Hasil', icon: 'checklist' },
 ]
 

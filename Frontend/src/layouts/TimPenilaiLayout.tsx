@@ -20,15 +20,7 @@ interface MenuItem {
 
 const menuItems: MenuItem[] = [
   { to: '/tim-penilai/dashboard', label: 'Dashboard', icon: 'dashboard' },
-  {
-    label: 'Penilaian Tahap 1', icon: 'clipboard',
-    children: [
-      { to: '/tim-penilai/tahap-1/usulan', label: 'Usulan Inovasi' },
-      { to: '/tim-penilai/tahap-1/evaluasi', label: 'Evaluasi' },
-      { to: '/tim-penilai/tahap-1/hasil', label: 'Hasil' },
-    ],
-  },
-  { to: '/tim-penilai/tahap-2', label: 'Penilaian Tahap 2', icon: 'chart' },
+  { to: '/tim-penilai/inovasi', label: 'Inovasi', icon: 'clipboard' },
 
 ]
 

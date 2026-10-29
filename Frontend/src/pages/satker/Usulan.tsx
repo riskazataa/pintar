@@ -191,7 +191,7 @@ export default function Usulan() {
     try {
       let flatQuestions: AssessmentQuestion[] = []
       if (detailUsulan?.workflow) {
-        flatQuestions = detailUsulan.workflow.config.tahap1
+        flatQuestions = detailUsulan.workflow.config.stages[0].questions
         setTemplateId(detailUsulan.template_package_id)
       } else if (detailUsulan) {
         flatQuestions = (detailUsulan.assessment_answers || []).map((a: any) => a.question)
@@ -200,7 +200,7 @@ export default function Usulan() {
         const { data: pack } = await activePackage()
         if (!pack) throw new Error('Admin belum memublikasikan template assessment')
         setTemplateId(pack.id)
-        flatQuestions = pack.config.tahap1 as unknown as AssessmentQuestion[]
+        flatQuestions = pack.config.stages[0].questions as unknown as AssessmentQuestion[]
       }
       setQuestions(flatQuestions)
       

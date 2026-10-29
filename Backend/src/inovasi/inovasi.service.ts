@@ -4,7 +4,7 @@ import {
   ForbiddenException,
 } from '@nestjs/common';
 import { WorkflowService } from './workflow.service';
-import { publicWorkflow, Workflow } from './workflow';
+import { publicWorkflow, Workflow, normaliseWorkflow } from './workflow';
 import { PrismaService } from '../prisma/prisma.service';
 import { Prisma, StatusInovasi } from '@prisma/client';
 import { CreateInovasiDto } from './dto/create-inovasi.dto';
@@ -98,8 +98,8 @@ export class InovasiService {
 
     return {
       data: data.map(item => {
-        const w = item.workflow as unknown as Workflow | null;
-        return { ...item, workflow: w ? { active: w.active, round: w.round, stages: w.stages.map(s => ({ created: s.created, reviewer_ids: s.reviewer_ids, result: s.result })) } : null };
+        const w = item.workflow ? normaliseWorkflow(item.workflow) : null;
+        return { ...item, workflow: w ? { active: w.active, round: w.round, stages: w.stages.map((s, index) => ({ nama: w.config.stages[index].nama, created: s.created, reviewer_ids: s.reviewer_ids, result: s.result })) } : null };
       }),
       meta: {
         total,
@@ -124,7 +124,7 @@ export class InovasiService {
     if (inovasi.workflow) {
       this.workflowService.readAccess(inovasi, user);
       const w = publicWorkflow(inovasi.workflow as unknown as Workflow, user.sub);
-      return { ...inovasi, workflow: w, assessment_answers: w.self.map(a => ({ ...a, id: a.question_id, question: w.config.tahap1.find(q => q.id === a.question_id) })), signatures: [], assigned_users: inovasi.penilai.map(p => ({ id: p.id, nama: p.nama_lengkap })) };
+      return { ...inovasi, workflow: w, assessment_answers: w.self.map(a => ({ ...a, id: a.question_id, question: w.config.stages[0].questions.find(q => q.id === a.question_id) })), signatures: [], assigned_users: inovasi.penilai.map(p => ({ id: p.id, nama: p.nama_lengkap })) };
     }
     // Format assigned_users from penilai relation
     const assignedUsers = inovasi.penilai.map((p) => ({

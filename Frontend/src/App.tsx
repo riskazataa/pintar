@@ -6,6 +6,7 @@ import Register from './pages/register'
 
 // Shared Component (Dashboard)
 import DashboardAnalytics from './pages/DashboardAnalytics'
+import Inovasi from './pages/Inovasi'
 
 // Admin
 import AdminLayout from './layouts/AdminLayout'
@@ -41,6 +42,7 @@ function App() {
         <Route path="dashboard" element={<DashboardAnalytics />} />
         <Route path="akun" element={<Akun />} />
         <Route path="organisasi" element={<Organisasi />} />
+        <Route path="inovasi" element={<Inovasi />} />
         <Route path="templates" element={<TemplateAssessment />} />
         <Route path="tahap-1" element={<StageAssessment stage={1} />} />
         <Route path="tahap-2" element={<StageAssessment stage={2} />} />
@@ -50,6 +52,7 @@ function App() {
       <Route path="/satker" element={<SatkerLayout />}>
         <Route index element={<Navigate to="/satker/dashboard" replace />} />
         <Route path="dashboard" element={<DashboardAnalytics />} />
+        <Route path="inovasi" element={<Inovasi />} />
         <Route path="usulan" element={<UsulanSatker />} />
         
         {/* 2. DAFTARKAN RUTE DETAIL DENGAN PARAMETER ID DI SINI */}
@@ -63,7 +66,8 @@ function App() {
         <Route index element={<Navigate to="/tim-penilai/dashboard" replace />} />
         <Route path="dashboard" element={<DashboardAnalytics />} />
 
-        {/* Penilaian Tahap 1 (Nested Routes) */}
+        <Route path="inovasi" element={<Inovasi />} />
+        {/* Tautan lama tetap tersedia */}
         <Route path="tahap-1/usulan" element={<StageAssessment stage={1} />} />
         <Route path="tahap-1/legacy" element={<Tahap1Usulan />} />
         <Route path="tahap-1/hasil-lama" element={<Tahap1Hasil />} />

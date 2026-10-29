@@ -82,8 +82,12 @@ function ReadOnlyAssessment({
 export default function StageAssessment({
   stage = 1,
   resultsOnly = false,
+  inovasiId,
+  onBack,
 }: {
-  stage?: 1 | 2
+  stage?: number
+  inovasiId?: number
+  onBack?: () => void
   resultsOnly?: boolean
 }) {
   const user = account()
@@ -107,6 +111,8 @@ export default function StageAssessment({
   const [dirty, setDirty] = useState(false)
   const pad = useRef<SignatureCanvas>(null)
   const update = (value: Detail) => {
+    if (!value.workflow.stages[stage - 1])
+      throw new Error('Tahap tidak tersedia untuk inovasi ini')
     setDetail(value)
     setAnswers(structuredClone(value.workflow.stages[stage - 1].answers))
     setDirty(false)
@@ -139,12 +145,13 @@ export default function StageAssessment({
   }
   useEffect(() => {
     setDetail(null)
-    void load()
+    if (inovasiId) void open(inovasiId)
+    else void load()
     if (admin)
       getAkunTimPenilai()
         .then((r) => setReviewers(r.data.data ?? r.data))
         .catch(() => setError('Gagal memuat akun reviewer'))
-  }, [stage, resultsOnly])
+  }, [stage, resultsOnly, inovasiId])
   const open = async (id: number) => {
     setBusy(true)
     setError('')
@@ -154,6 +161,7 @@ export default function StageAssessment({
       showError(e)
     } finally {
       setBusy(false)
+      setLoading(false)
     }
   }
   const showError = (e: unknown) =>
@@ -180,7 +188,7 @@ export default function StageAssessment({
           )
         ).data,
       )
-      await load()
+      if (!inovasiId) await load()
     } catch (e) {
       showError(e)
     } finally {
@@ -192,11 +200,7 @@ export default function StageAssessment({
   const active = detail?.workflow.active === stage && !s?.result
   const assigned = s?.reviewer_ids.includes(Number(user.id))
   const editable = active && assigned && s?.signatures.length === 0
-  const rows = detail
-    ? stage === 1
-      ? detail.workflow.config.tahap1
-      : detail.workflow.config.tahap2
-    : []
+  const rows = detail?.workflow.config.stages[stage - 1]?.questions || []
   const status = (result: string | null | undefined) =>
     result === 'LOLOS'
       ? 'Lolos'
@@ -233,7 +237,7 @@ export default function StageAssessment({
   return (
     <div className="space-y-5">
       <h2 className="text-xl font-semibold">
-        {resultsOnly ? 'Hasil' : 'Assessment'} Tahap {stage}
+        {resultsOnly ? 'Hasil' : 'Assessment'} {detail?.workflow.config.stages[stage - 1]?.nama || `Tahap ${stage}`}
       </h2>
       {error && (
         <p role="alert" className="rounded bg-red-50 p-3 text-red-700">
@@ -254,11 +258,13 @@ export default function StageAssessment({
           ) : list.filter(
               (item) =>
                 item.workflow &&
-                (!resultsOnly || item.workflow.stages[stage - 1].result),
+                (!resultsOnly || item.workflow.stages[stage - 1]?.result),
             ).length === 0 ? (
             <p>
               Belum ada{' '}
-              {resultsOnly ? 'hasil final' : 'usulan dengan template dua tahap'}
+              {resultsOnly
+                ? 'hasil final'
+                : 'usulan dengan template assessment'}
               . Admin perlu memublikasikan paket template sebelum satker
               mengajukan usulan baru.
             </p>
@@ -267,7 +273,7 @@ export default function StageAssessment({
             .filter(
               (item) =>
                 item.workflow &&
-                (!resultsOnly || item.workflow.stages[stage - 1].result),
+                (!resultsOnly || item.workflow.stages[stage - 1]?.result),
             )
             .map((item) => (
               <div
@@ -276,9 +282,9 @@ export default function StageAssessment({
               >
                 <span className="flex-1">{item.judul}</span>
                 <span
-                  className={badge(item.workflow?.stages[stage - 1].result)}
+                  className={badge(item.workflow?.stages[stage - 1]?.result)}
                 >
-                  {status(item.workflow?.stages[stage - 1].result)}
+                  {status(item.workflow?.stages[stage - 1]?.result)}
                 </span>
                 <button
                   disabled={busy}
@@ -307,7 +313,7 @@ export default function StageAssessment({
             <button
               onClick={() => {
                 if (!dirty || confirm('Abaikan perubahan yang belum disimpan?'))
-                  setDetail(null)
+                  onBack ? onBack() : setDetail(null)
               }}
             >
               ← Daftar
@@ -389,39 +395,41 @@ export default function StageAssessment({
                 </tr>
               </thead>
               <tbody>
-                {ordered(detail.workflow.config.tahap1).map((q) => {
-                  const a = detail.workflow.self.find(
-                    (a) => a.question_id === q.id,
-                  )
-                  return (
-                    <tr key={q.id}>
-                      <td className="p-2">
-                        {q.no}. {q.pertanyaan}
-                      </td>
-                      <td>{a?.jawaban_boolean ? 'Ya' : 'Tidak'}</td>
-                      <td>{a?.catatan_string}</td>
-                      <td>
-                        {a?.link && (
-                          <a
-                            className="text-blue-700 underline"
-                            href={a.link}
-                            target="_blank"
-                            rel="noreferrer"
-                          >
-                            Bukti
-                          </a>
-                        )}
-                      </td>
-                    </tr>
-                  )
-                })}
+                {ordered(detail.workflow.config.stages[0].questions).map(
+                  (q) => {
+                    const a = detail.workflow.self.find(
+                      (a) => a.question_id === q.id,
+                    )
+                    return (
+                      <tr key={q.id}>
+                        <td className="p-2">
+                          {q.no}. {q.pertanyaan}
+                        </td>
+                        <td>{a?.jawaban_boolean ? 'Ya' : 'Tidak'}</td>
+                        <td>{a?.catatan_string}</td>
+                        <td>
+                          {a?.link && (
+                            <a
+                              className="text-blue-700 underline"
+                              href={a.link}
+                              target="_blank"
+                              rel="noreferrer"
+                            >
+                              Bukti
+                            </a>
+                          )}
+                        </td>
+                      </tr>
+                    )
+                  },
+                )}
               </tbody>
             </table>
           </details>
           {!s?.created ? (
             <p>
-              Tahap ini akan dibuat setelah tahap 1 Lolos. Reviewer tahap 2
-              dapat ditetapkan lebih dahulu.
+              Tahap ini akan dibuat setelah tahap sebelumnya Lolos. Reviewer
+              tahap 2 dapat ditetapkan lebih dahulu.
             </p>
           ) : (
             <div className="overflow-x-auto rounded-xl border bg-white p-4">
@@ -680,7 +688,7 @@ export default function StageAssessment({
                 onClick={() => {
                   if (
                     confirm(
-                      'Kembalikan ke satker dan reset seluruh tanda tangan serta suara kedua tahap? Isian draf dan riwayat tetap disimpan.',
+                      'Kembalikan ke satker dan reset seluruh tanda tangan serta suara semua tahap? Isian draf dan riwayat tetap disimpan.',
                     )
                   )
                     void action('return', { reason })
@@ -703,7 +711,7 @@ export default function StageAssessment({
                 <details>
                   <summary>Self assessment putaran ini</summary>
                   <ReadOnlyAssessment
-                    questions={detail.workflow.config.tahap1}
+                    questions={detail.workflow.config.stages[0].questions}
                     answers={h.self}
                   />
                 </details>
@@ -714,11 +722,7 @@ export default function StageAssessment({
                       {old.signatures.length} tanda tangan diarsipkan
                     </summary>
                     <ReadOnlyAssessment
-                      questions={
-                        i === 0
-                          ? detail.workflow.config.tahap1
-                          : detail.workflow.config.tahap2
-                      }
+                      questions={detail.workflow.config.stages[i].questions}
                       answers={old.answers}
                     />
                     {old.signatures.map((sig) => (

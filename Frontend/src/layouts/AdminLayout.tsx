@@ -15,8 +15,7 @@ const menuItems = [
   { to: '/admin/dashboard', label: 'Dashboard', icon: 'dashboard' },
   { to: '/admin/akun', label: 'Akun', icon: 'users' },
   { to: '/admin/templates', label: 'Template Assessment', icon: 'building' },
-  { to: '/admin/tahap-1', label: 'Assessment Tahap 1', icon: 'building' },
-  { to: '/admin/tahap-2', label: 'Assessment Tahap 2', icon: 'building' },
+  { to: '/admin/inovasi', label: 'Inovasi', icon: 'building' },
   { to: '/admin/organisasi', label: 'Organisasi', icon: 'building' },
 ]
 

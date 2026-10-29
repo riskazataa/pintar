@@ -1,7 +1,12 @@
-// Real HTTP controllers + validation + PostgreSQL. Creates and removes only its
-// own fixtures. Run after npm run build and prisma migrate deploy.
+// Real HTTP controllers + validation + PostgreSQL in a temporary isolated schema.
+// Run after npm run build; all migrations are applied only inside the test schema.
 require('dotenv').config({ quiet: true });
 const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const path = require('node:path');
+const { Pool } = require('pg');
+const { PrismaClient } = require('@prisma/client');
+const { PrismaPg } = require('@prisma/adapter-pg');
 const { Test } = require('@nestjs/testing');
 const { ValidationPipe } = require('@nestjs/common');
 const { JwtService } = require('@nestjs/jwt');
@@ -18,30 +23,52 @@ async function main() {
     new URL(process.env.DATABASE_URL).hostname,
   );
   assert.ok(local, 'Integration fixtures are restricted to a local database');
-  const module = await Test.createTestingModule({
-    imports: [
-      ConfigModule.forRoot({ isGlobal: true }),
-      PrismaModule,
-      InovasiModule,
-    ],
-  }).compile();
-  const app = module.createNestApplication();
-  app.useGlobalPipes(
-    new ValidationPipe({
-      whitelist: true,
-      forbidNonWhitelisted: true,
-      transform: true,
-    }),
-  );
-  await app.init();
-  const prisma = app.get(PrismaService);
-  const jwt = new JwtService({ secret: process.env.JWT_SECRET });
-  const key = `workflow-test-${Date.now()}`;
-  let satker;
-  let packageId;
-  let inovasiId;
-  const users = [];
+  const namespace = 'workflow_integration_' + Date.now();
+  assert.match(namespace, /^workflow_integration_[0-9]+$/);
+  const adminPool = new Pool({ connectionString: process.env.DATABASE_URL });
+  const pool = new Pool({
+    connectionString: process.env.DATABASE_URL,
+    options: '-c search_path=' + namespace,
+  });
+  const prisma = new PrismaClient({
+    adapter: new PrismaPg(pool, { schema: namespace }),
+  });
+  let app;
+  let createdSchema = false;
   try {
+    await adminPool.query('CREATE SCHEMA "' + namespace + '"');
+    createdSchema = true;
+    const migrations = path.join(__dirname, '../prisma/migrations');
+    for (const folder of fs.readdirSync(migrations).sort()) {
+      const file = path.join(migrations, folder, 'migration.sql');
+      if (fs.existsSync(file)) await pool.query(fs.readFileSync(file, 'utf8'));
+    }
+    const module = await Test.createTestingModule({
+      imports: [
+        ConfigModule.forRoot({ isGlobal: true }),
+        PrismaModule,
+        InovasiModule,
+      ],
+    })
+      .overrideProvider(PrismaService)
+      .useValue(prisma)
+      .compile();
+    app = module.createNestApplication();
+    app.useGlobalPipes(
+      new ValidationPipe({
+        whitelist: true,
+        forbidNonWhitelisted: true,
+        transform: true,
+      }),
+    );
+    await app.init();
+
+    const jwt = new JwtService({ secret: process.env.JWT_SECRET });
+    const key = `workflow-test-${Date.now()}`;
+    let satker;
+    let packageId;
+    let inovasiId;
+    const users = [];
     satker = await prisma.satker.create({ data: { nama_satker: key } });
     for (const role of [
       'SUPER_ADMIN',
@@ -276,22 +303,68 @@ async function main() {
       where: { id: packageId },
     });
     assert.ok(refreshed.used_at);
+    // Exercise a third stage through the real routes, not just the pure engine.
+    const config3 = {
+      stages: [
+        { nama: 'Awal', questions: config.tahap1 },
+        { nama: 'Lanjutan', questions: config.tahap2 },
+        {
+          nama: 'Verifikasi akhir',
+          questions: [{ id: 20, pertanyaan: 'Kesimpulan', parent_id: null }],
+        },
+      ],
+      mappings: [
+        ...config.mappings,
+        { source_stage: 2, source_id: 10, target_stage: 3, target_id: 20 },
+      ],
+    };
+    const pack3 = await send(0, 'post', '/assessment-workflow/templates', {
+      nama: key + '-dynamic',
+      config: config3,
+    });
+    await send(
+      0,
+      'post',
+      '/assessment-workflow/templates/' + pack3.id + '/publish',
+      {},
+    );
+    const innovation3 = await send(1, 'post', '/inovasi', {
+      ...payload,
+      template_package_id: pack3.id,
+      judul: key + '-dynamic',
+    });
+    inovasiId = innovation3.id;
+    detail = await send(
+      0,
+      'get',
+      '/assessment-workflow/inovasi/' + inovasiId,
+      undefined,
+      200,
+    );
+    await action(0, 4, 'assign', { reviewer_ids: [users[2].id] }, 400);
+    for (let number = 1; number <= 3; number++) {
+      await action(0, number, 'assign', { reviewer_ids: [users[2].id] });
+      await action(2, number, 'sign', signing);
+      await action(2, number, 'vote', { lolos: true });
+      assert.equal(
+        detail.status,
+        number === 3 ? 'SELESAI_EVALUASI' : 'APPROVED',
+      );
+    }
+    assert.equal(detail.workflow.config.stages[2].nama, 'Verifikasi akhir');
     console.log(
-      'PASS: HTTP + PostgreSQL: template freeze, role access, independent stages, concurrent writes, signatures, majority votes, return and resubmit without recopy',
+      'PASS: HTTP + PostgreSQL: template freeze, role access, dynamic three-stage progression, concurrent writes, signatures, majority votes, return and resubmit without recopy',
     );
   } finally {
-    if (inovasiId) await prisma.inovasi.delete({ where: { id: inovasiId } });
-    if (packageId)
-      await prisma.assessmentTemplatePackage.delete({
-        where: { id: packageId },
-      });
-    if (users.length)
-      await prisma.user.deleteMany({
-        where: { id: { in: users.map((u) => u.id) } },
-      });
-    if (satker) await prisma.satker.delete({ where: { id: satker.id } });
     await prisma.$disconnect();
-    await app.close();
+    if (app) await app.close();
+    await pool.end().catch(() => {});
+    try {
+      if (createdSchema)
+        await adminPool.query('DROP SCHEMA "' + namespace + '" CASCADE');
+    } finally {
+      await adminPool.end();
+    }
   }
 }
 main()

@@ -12,14 +12,17 @@ export interface Answer {
   link: string;
 }
 export interface Mapping {
-  source_stage: 0 | 1;
+  source_stage: number;
   source_id: number;
-  target_stage: 1 | 2;
+  target_stage: number;
   target_id: number;
 }
+export interface StageTemplate {
+  nama: string;
+  questions: Question[];
+}
 export interface Config {
-  tahap1: Question[];
-  tahap2: Question[];
+  stages: StageTemplate[];
   mappings: Mapping[];
 }
 export interface Signature {
@@ -40,13 +43,13 @@ export interface Stage {
   result: 'LOLOS' | 'TIDAK_LOLOS' | null;
 }
 export interface Workflow {
-  version: 1;
+  version: 1 | 2;
   revision: number;
-  active: 0 | 1 | 2;
+  active: number;
   round: number;
   config: Config;
   self: Answer[];
-  stages: [Stage, Stage];
+  stages: Stage[];
   history: {
     at: string;
     actor: number;
@@ -59,24 +62,33 @@ export interface Workflow {
 export function check(condition: unknown, message: string): asserts condition {
   if (!condition) throw new Error(message);
 }
-export function validateConfig(input: Config): Config {
-  check(
-    input &&
-      Array.isArray(input.tahap1) &&
-      Array.isArray(input.tahap2) &&
-      Array.isArray(input.mappings),
-    'Konfigurasi template tidak valid',
-  );
-  const config: Config = { tahap1: [], tahap2: [], mappings: [] };
-  for (const key of ['tahap1', 'tahap2'] as const) {
-    const rows = input[key];
+// Accept published v1 snapshots without changing their meaning or stage order.
+export function validateConfig(input: unknown): Config {
+  const raw = input as Config & { tahap1?: Question[]; tahap2?: Question[] };
+  check(raw && Array.isArray(raw.mappings), 'Konfigurasi template tidak valid');
+  const templates = Array.isArray(raw.stages)
+    ? raw.stages
+    : Array.isArray(raw.tahap1) && Array.isArray(raw.tahap2)
+      ? [
+          { nama: 'Tahap 1', questions: raw.tahap1 },
+          { nama: 'Tahap 2', questions: raw.tahap2 },
+        ]
+      : [];
+  check(templates.length > 0, 'Tambahkan minimal satu tahap review');
+  const config: Config = { stages: [], mappings: [] };
+  for (const template of templates) {
     check(
-      rows.length > 0 && rows.length <= 300,
+      typeof template.nama === 'string' && template.nama.trim(),
+      'Nama tahap wajib diisi',
+    );
+    const rows = template.questions;
+    check(
+      Array.isArray(rows) && rows.length > 0 && rows.length <= 300,
       'Setiap tahap memerlukan 1–300 pertanyaan',
     );
     const ids = new Set(rows.map((q) => q.id));
     check(ids.size === rows.length, 'ID pertanyaan harus unik dalam tahap');
-    config[key] = rows.map((q) => {
+    const questions = rows.map((q) => {
       check(
         Number.isSafeInteger(q.id) &&
           q.id > 0 &&
@@ -96,23 +108,26 @@ export function validateConfig(input: Config): Config {
         parent_id: q.parent_id,
       };
     });
+    config.stages.push({ nama: template.nama.trim(), questions });
   }
   const targets = new Set<string>();
-  for (const m of input.mappings) {
+  for (const m of raw.mappings) {
     check(
-      (m.target_stage === 1 && m.source_stage === 0) ||
-        (m.target_stage === 2 && [0, 1].includes(m.source_stage)),
+      Number.isSafeInteger(m.source_stage) &&
+        Number.isSafeInteger(m.target_stage) &&
+        m.source_stage >= 0 &&
+        m.source_stage < m.target_stage &&
+        m.target_stage <= config.stages.length,
       'Sumber copy harus berasal dari tahap sebelumnya',
     );
-    const source =
-      m.source_stage === 0 || m.source_stage === 1 ? config.tahap1 : [];
-    const target = m.target_stage === 1 ? config.tahap1 : config.tahap2;
+    const source = config.stages[Math.max(0, m.source_stage - 1)].questions;
+    const target = config.stages[m.target_stage - 1].questions;
     check(
       source.some((q) => q.id === m.source_id) &&
         target.some((q) => q.id === m.target_id),
       'Baris sumber/tujuan copy tidak ditemukan',
     );
-    const key = `${m.target_stage}:${m.target_id}`;
+    const key = m.target_stage + ':' + m.target_id;
     check(
       !targets.has(key),
       'Satu baris tujuan hanya boleh memiliki satu sumber',
@@ -126,6 +141,23 @@ export function validateConfig(input: Config): Config {
     });
   }
   return config;
+}
+export function normaliseWorkflow(input: unknown): Workflow {
+  const w = structuredClone(input) as Workflow;
+  w.config = validateConfig(w.config);
+  check(
+    Array.isArray(w.stages) && w.stages.length === w.config.stages.length,
+    'Jumlah tahap usulan tidak sesuai snapshot template',
+  );
+  w.version = 2;
+  return w;
+}
+export function stageAt(w: Workflow, number: number): Stage {
+  check(
+    Number.isSafeInteger(number) && number >= 1 && number <= w.stages.length,
+    'Tahap tidak ditemukan dalam template usulan',
+  );
+  return w.stages[number - 1];
 }
 export function validateAnswers(
   questions: Question[],
@@ -181,15 +213,15 @@ export function validateAnswers(
     };
   });
 }
-export function startStage(w: Workflow, number: 1 | 2) {
-  const stage = w.stages[number - 1];
+export function startStage(w: Workflow, number: number) {
+  const stage = stageAt(w, number);
   if (stage.created) return; // Never re-copy on a resubmission.
-  const questions = number === 1 ? w.config.tahap1 : w.config.tahap2;
+  const questions = w.config.stages[number - 1].questions;
   stage.answers = validateAnswers(questions, [], false);
   for (const m of w.config.mappings.filter((m) => m.target_stage === number)) {
-    const source = (m.source_stage === 0 ? w.self : w.stages[0].answers).find(
-      (a) => a.question_id === m.source_id,
-    );
+    const source = (
+      m.source_stage === 0 ? w.self : w.stages[m.source_stage - 1].answers
+    ).find((a) => a.question_id === m.source_id);
     if (source)
       stage.answers[questions.findIndex((q) => q.id === m.target_id)] = {
         ...source,
@@ -207,21 +239,22 @@ export function initialise(config: Config, self: Answer[]): Workflow {
     result: null,
   });
   const w: Workflow = {
-    version: 1,
+    version: 2,
     revision: 0,
     active: 1,
     round: 1,
     config: validateConfig(config),
     self: [],
-    stages: [stage(), stage()],
+    stages: [],
     history: [],
   };
-  w.self = validateAnswers(w.config.tahap1, self);
+  w.stages = w.config.stages.map(() => stage());
+  w.self = validateAnswers(w.config.stages[0].questions, self);
   startStage(w, 1);
   return w;
 }
-export function assign(w: Workflow, number: 1 | 2, ids: number[]) {
-  const s = w.stages[number - 1];
+export function assign(w: Workflow, number: number, ids: number[]) {
+  const s = stageAt(w, number);
   check(
     s.reviewer_ids.length === 0,
     'Reviewer sudah ditetapkan dan tidak dapat diubah',
@@ -234,8 +267,8 @@ export function assign(w: Workflow, number: 1 | 2, ids: number[]) {
   );
   s.reviewer_ids = [...ids];
 }
-export function activeStage(w: Workflow, number: 1 | 2, user: number): Stage {
-  const s = w.stages[number - 1];
+export function activeStage(w: Workflow, number: number, user: number): Stage {
+  const s = stageAt(w, number);
   check(
     w.active === number && s.created && !s.result,
     'Tahap ini tidak sedang aktif',
@@ -245,7 +278,7 @@ export function activeStage(w: Workflow, number: 1 | 2, user: number): Stage {
 }
 export function saveAnswers(
   w: Workflow,
-  number: 1 | 2,
+  number: number,
   user: number,
   answers: Answer[],
 ) {
@@ -255,18 +288,18 @@ export function saveAnswers(
     'Isian terkunci setelah tanda tangan pertama',
   );
   s.answers = validateAnswers(
-    number === 1 ? w.config.tahap1 : w.config.tahap2,
+    w.config.stages[number - 1].questions,
     answers,
     false,
   );
 }
-export function sign(w: Workflow, number: 1 | 2, signature: Signature) {
+export function sign(w: Workflow, number: number, signature: Signature) {
   const s = activeStage(w, number, signature.user_id);
   check(
     !s.signatures.some((v) => v.user_id === signature.user_id),
     'Anda sudah menandatangani tahap ini',
   );
-  validateAnswers(number === 1 ? w.config.tahap1 : w.config.tahap2, s.answers);
+  validateAnswers(w.config.stages[number - 1].questions, s.answers);
   check(
     /^data:image\/png;base64,[A-Za-z0-9+/=]+$/.test(signature.ttd_image) &&
       signature.ttd_image.length <= 500000,
@@ -280,7 +313,7 @@ export function sign(w: Workflow, number: 1 | 2, signature: Signature) {
 }
 export function vote(
   w: Workflow,
-  number: 1 | 2,
+  number: number,
   user: number,
   choice: boolean,
 ) {
@@ -301,9 +334,9 @@ export function vote(
       s.reviewer_ids.length / 2
         ? 'LOLOS'
         : 'TIDAK_LOLOS';
-    if (number === 1 && s.result === 'LOLOS') {
-      w.active = 2;
-      startStage(w, 2);
+    if (number < w.stages.length && s.result === 'LOLOS') {
+      w.active = number + 1;
+      startStage(w, number + 1);
     }
   }
 }
@@ -318,7 +351,7 @@ export function returnToSelf(
     'Alasan pengembalian wajib diisi',
   );
   check(w.active !== 0, 'Usulan sudah dalam perbaikan satker');
-  if (!admin) activeStage(w, w.active as 1 | 2, user);
+  if (!admin) activeStage(w, w.active, user);
   w.history.push({
     at: new Date().toISOString(),
     actor: user,
@@ -336,11 +369,11 @@ export function returnToSelf(
 }
 export function resubmit(w: Workflow, answers: Answer[]) {
   check(w.active === 0, 'Usulan tidak sedang dikembalikan ke satker');
-  w.self = validateAnswers(w.config.tahap1, answers);
+  w.self = validateAnswers(w.config.stages[0].questions, answers);
   w.active = 1;
 }
 export function publicWorkflow(w: Workflow, user: number): Workflow {
-  const copy = structuredClone(w);
+  const copy = normaliseWorkflow(w);
   for (const stage of copy.stages) {
     for (const s of stage.signatures) {
       s.voted = s.vote !== null;
@@ -354,6 +387,7 @@ export function workflowStatus(
 ): 'PENDING' | 'APPROVED' | 'REJECTED' | 'PERBAIKAN' | 'SELESAI_EVALUASI' {
   if (w.active === 0) return 'PERBAIKAN';
   if (w.stages.some((s) => s.result === 'TIDAK_LOLOS')) return 'REJECTED';
-  if (w.stages[1].result === 'LOLOS') return 'SELESAI_EVALUASI';
-  return w.active === 2 ? 'APPROVED' : 'PENDING';
+  if (w.stages[w.stages.length - 1].result === 'LOLOS')
+    return 'SELESAI_EVALUASI';
+  return w.active > 1 ? 'APPROVED' : 'PENDING';
 }

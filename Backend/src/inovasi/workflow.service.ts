@@ -29,15 +29,19 @@ export class WorkflowService {
   }
   async packages(user: Actor) {
     this.admin(user);
-    return this.prisma.assessmentTemplatePackage.findMany({
+    const rows = await this.prisma.assessmentTemplatePackage.findMany({
       orderBy: { id: 'desc' },
     });
+    return rows.map((p) => ({ ...p, config: engine.validateConfig(p.config) }));
   }
   async activePackage() {
-    return this.prisma.assessmentTemplatePackage.findFirst({
+    const pack = await this.prisma.assessmentTemplatePackage.findFirst({
       where: { published_at: { not: null } },
       orderBy: [{ published_at: 'desc' }, { id: 'desc' }],
     });
+    return pack
+      ? { ...pack, config: engine.validateConfig(pack.config) }
+      : null;
   }
   async createPackage(body: any, user: Actor) {
     this.admin(user);
@@ -113,7 +117,7 @@ export class WorkflowService {
     });
     if (!item?.workflow)
       throw new NotFoundException(
-        'Usulan ini belum menggunakan assessment dua tahap',
+        'Usulan ini belum menggunakan assessment bertahap',
       );
     this.readAccess(item, user);
     const workflow = engine.publicWorkflow(
@@ -142,9 +146,9 @@ export class WorkflowService {
     body: any,
     user: Actor,
   ) {
-    if (![1, 2].includes(number))
-      throw new BadRequestException('Tahap harus 1 atau 2');
-    const stageNumber = number as 1 | 2;
+    if (!Number.isSafeInteger(number) || number < 1)
+      throw new BadRequestException('Nomor tahap tidak valid');
+    const stageNumber = number;
     await this.prisma.$transaction(async (tx) => {
       // Serialize every state change including competing signatures, votes, returns,
       // assignments, and self resubmission on the same database row.
@@ -153,12 +157,13 @@ export class WorkflowService {
       if (!item?.workflow)
         throw new NotFoundException('Assessment tidak ditemukan');
       this.readAccess(item, user);
-      const w = item.workflow as unknown as engine.Workflow;
+      const w = engine.normaliseWorkflow(item.workflow);
       if (body.revision !== w.revision)
         throw new BadRequestException(
           'Data telah berubah. Muat ulang sebelum melanjutkan',
         );
       try {
+        engine.stageAt(w, stageNumber);
         switch (action) {
           case 'assign': {
             this.admin(user);
@@ -256,7 +261,7 @@ export class WorkflowService {
         throw new ForbiddenException(
           'Hanya satker pemilik yang dapat mengirim ulang',
         );
-      const w = item.workflow as unknown as engine.Workflow;
+      const w = engine.normaliseWorkflow(item.workflow);
       try {
         engine.resubmit(w, answers);
       } catch (e) {
