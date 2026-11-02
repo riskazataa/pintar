@@ -1,17 +1,17 @@
-name: pintar
+name: siapin
 
 services:
   siapin-db:
     image: postgres:17-alpine
     restart: unless-stopped
     environment:
-      POSTGRES_DB: pintar
-      POSTGRES_USER: pintar
+      POSTGRES_DB: siapin
+      POSTGRES_USER: siapin
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Isi POSTGRES_PASSWORD di .env}
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U pintar -d pintar"]
+      test: ["CMD-SHELL", "pg_isready -U siapin -d siapin"]
       interval: 5s
       timeout: 5s
       retries: 20
@@ -27,7 +27,7 @@ services:
       NODE_ENV: production
       PORT: "3000"
       # Gunakan password hex agar aman dimasukkan ke URL tanpa encoding tambahan.
-      DATABASE_URL: postgresql://pintar:${POSTGRES_PASSWORD:?Isi POSTGRES_PASSWORD di .env}@siapin-db:5432/pintar
+      DATABASE_URL: postgresql://siapin:${POSTGRES_PASSWORD:?Isi POSTGRES_PASSWORD di .env}@siapin-db:5432/siapin
       JWT_SECRET: ${JWT_SECRET:?Isi JWT_SECRET di .env}
       RESEND_API_KEY: ${RESEND_API_KEY:?Isi RESEND_API_KEY di .env}
       EMAIL_FROM: ${EMAIL_FROM:?Isi EMAIL_FROM di .env}
