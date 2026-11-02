@@ -69,6 +69,15 @@ jobs:
           }
 
           docker compose config --quiet
+          # Existing installations must transfer data before changing project identity.
+          legacy_containers=$(docker ps -aq --filter label=com.docker.compose.project=pintar)
+          if [[ -n "$legacy_containers" ]] || {
+            docker volume inspect pintar_postgres_data >/dev/null 2>&1 &&
+            ! docker volume inspect siapin_postgres_data >/dev/null 2>&1
+          }; then
+            echo 'Jalankan python3 deploy/migrate-to-siapin.py --apply di VPS, lalu ulangi deploy.'
+            exit 1
+          fi
           # Build failure leaves the running application untouched.
           docker compose build
           docker compose up -d siapin-db --wait --wait-timeout 120
@@ -76,7 +85,7 @@ jobs:
           mkdir -p backups
           backup="backups/$(date -u +%Y%m%dT%H%M%SZ)-$2.dump"
           # Do not let exec consume the remaining script arriving over SSH stdin.
-          docker compose exec -T --interactive=false siapin-db pg_dump -U pintar -d pintar -Fc < /dev/null > "$backup.tmp"
+          docker compose exec -T --interactive=false siapin-db pg_dump -U siapin -d siapin -Fc < /dev/null > "$backup.tmp"
           mv "$backup.tmp" "$backup"
 
           docker compose up -d --wait --wait-timeout 180

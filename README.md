@@ -1,4 +1,4 @@
-# PINTAR
+# SIAPIN
 
 ## Deploy ke VPS dengan Docker
 
@@ -10,8 +10,49 @@ Container proyek ini tidak membuka port host, sehingga tidak merebut port 80/443
 milik Nginx maupun port 5432 milik PostgreSQL aplikasi lain. Service `siapin-web`
 dan `siapin-api` memakai nama unik pada network external `manris_manris-network`.
 Service database `siapin-db` tetap terpisah pada network default dan volume
-`pintar_postgres_data`. Nginx existing meneruskan request ke kedua service melalui
+`siapin_postgres_data`. Nginx existing meneruskan request ke kedua service melalui
 network Docker, sedangkan Caddy hanya menyajikan frontend melalui HTTP internal.
+
+### Instalasi existing: ganti nama project dan database
+
+Instalasi lama memakai project/user/database `pintar`. Jangan langsung menjalankan
+Compose baru karena nama project baru memilih volume `siapin_postgres_data`.
+Workflow akan berhenti jika mendeteksi instalasi lama, agar tidak menyalakan
+aplikasi dengan database kosong.
+
+Setelah perubahan ini di-push dan tersedia di VPS, jalankan **sekali**:
+
+```sh
+cd /opt/siapin
+git pull origin main
+python3 deploy/migrate-to-siapin.py --apply
+```
+
+Lakukan saat tidak ada deploy lain atau penulisan melalui DBeaver. Script build
+terlebih dahulu, menghentikan API/frontend lama, menyimpan dump private di
+`backups/`, lalu restore ke database baru dalam satu transaksi. Jumlah baris
+setiap tabel (termasuk riwayat Prisma) dicocokkan sebelum aplikasi baru diaktifkan.
+Seluruh data dan hash password akun aplikasi ikut dipindahkan.
+
+Jika restore atau startup gagal, script menghentikan stack baru dan mencoba
+menyalakan API/frontend lama kembali. Kedua volume serta dump tetap disimpan;
+target yang sudah ada tidak akan ditimpa saat script dijalankan ulang. Periksa
+penyebab dan isi volume sebelum menghapus apa pun. Script tidak mengubah aplikasi
+lain, Nginx, atau network proxy existing.
+
+Setelah sukses, ulangi job GitHub Actions. Container lama dihapus, sedangkan
+volume lama `pintar_postgres_data` tetap disimpan sebagai cadangan. User dan nama
+database DBeaver sekarang **`siapin`**, dengan password yang sama dari `.env`.
+IP container database berubah; ambil ulang dengan:
+
+```sh
+docker inspect siapin-siapin-db-1 --format '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}'
+```
+
+Perbarui Host DBeaver dan `PermitOpen` user SSH khusus engineer bila sebelumnya
+menggunakan IP lama. Jika mengubah konfigurasi SSH, jalankan `sudo sshd -t`
+sebelum reload. Jangan menghapus volume lama sebelum memverifikasi aplikasi dan
+backup. Untuk instalasi baru, langsung ikuti setup di bawah.
 
 ### 1. Siapkan konfigurasi aplikasi
 
@@ -50,8 +91,9 @@ docker compose ps
 Jika network tidak ditemukan, periksa konfigurasi Nginx; jangan membuat network
 pengganti dengan nama sama tanpa memastikan Nginx terhubung. Jangan tambahkan
 `container_name: backend`, `frontend`, `nginx`, atau `postgres` karena nama-nama
-tersebut sudah digunakan aplikasi lain. Folder deploy adalah `/opt/siapin`. Pertahankan nama project Compose
-`pintar` agar volume database tetap sama; nama folder tidak mengubah nama project ini.
+tersebut sudah digunakan aplikasi lain. Folder deploy adalah `/opt/siapin` dan
+nama project Compose adalah `siapin`. Sesudah migrasi satu kali, pertahankan nama
+project tersebut agar tetap memakai volume database yang sama.
 
 ### 2. DNS dan HTTPS melalui Nginx existing
 
@@ -148,7 +190,7 @@ Daftarkan akun melalui halaman registrasi sebagai Reviewer/Penilai. Setelah itu,
 masuk ke PostgreSQL melalui VPS:
 
 ```sh
-docker compose exec siapin-db psql -U pintar -d pintar
+docker compose exec siapin-db psql -U siapin -d siapin
 ```
 
 Jalankan SQL berikut dengan email akun yang baru didaftarkan:
@@ -166,7 +208,7 @@ Pastikan hasilnya `UPDATE 1`, lalu login. Ini hanya perlu dilakukan sekali.
 
 ```sh
 # Backup sebelum update; simpan juga salinannya di luar VPS.
-docker compose exec -T --interactive=false siapin-db pg_dump -U pintar -d pintar -Fc > backup.dump
+docker compose exec -T --interactive=false siapin-db pg_dump -U siapin -d siapin -Fc > backup.dump
 
 # Ambil versi terbaru dan terapkan.
 git pull
@@ -187,7 +229,7 @@ Untuk memulihkan backup ke database **kosong** pada instalasi baru:
 
 ```sh
 docker compose up -d siapin-db --wait
-docker compose exec -T siapin-db pg_restore -U pintar -d pintar --no-owner --exit-on-error < backup.dump
+docker compose exec -T siapin-db pg_restore -U siapin -d siapin --no-owner --exit-on-error < backup.dump
 docker compose up -d --build --wait --wait-timeout 180
 ```
 
@@ -212,11 +254,11 @@ Build dilakukan langsung di VPS, sehingga tidak perlu container registry.
 4. Buat SSH key khusus GitHub Actions pada komputer yang kamu gunakan untuk setup:
 
    ```sh
-   ssh-keygen -t ed25519 -f pintar-actions -C github-actions-pintar -N ''
+   ssh-keygen -t ed25519 -f siapin-actions -C github-actions-siapin -N ''
    ```
 
-   Tambahkan isi `pintar-actions.pub` ke `~/.ssh/authorized_keys` milik user deploy
-   di VPS. Isi file `pintar-actions` menjadi secret `VPS_SSH_KEY` di GitHub.
+   Tambahkan isi `siapin-actions.pub` ke `~/.ssh/authorized_keys` milik user deploy
+   di VPS. Isi file `siapin-actions` menjadi secret `VPS_SSH_KEY` di GitHub.
    Ini key untuk **Actions → VPS**, berbeda dari key **VPS → GitHub** untuk fetch
    repository private. Jangan simpan private key di repository.
 
@@ -231,19 +273,19 @@ repository secret**, lalu isi:
 | `VPS_USER` | User SSH yang memiliki akses Docker dan folder aplikasi |
 | `VPS_PORT` | Port SSH; opsional, default `22` |
 | `VPS_PATH` | Path absolut clone repository, misalnya `/opt/siapin`; tanpa spasi |
-| `VPS_SSH_KEY` | Seluruh isi private key `pintar-actions` |
+| `VPS_SSH_KEY` | Seluruh isi private key `siapin-actions` |
 | `VPS_KNOWN_HOSTS` | Baris host key SSH VPS yang sudah diverifikasi |
 
 Untuk mendapatkan baris `VPS_KNOWN_HOSTS`, jalankan di komputer setup:
 
 ```sh
-ssh-keyscan -p 22 -H IP_VPS > pintar-known-hosts
-ssh-keygen -lf pintar-known-hosts
+ssh-keyscan -p 22 -H IP_VPS > siapin-known-hosts
+ssh-keygen -lf siapin-known-hosts
 ```
 
 Cocokkan fingerprint dengan host key pada console VPS, misalnya
 `ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub`, lalu salin isi file
-`pintar-known-hosts` ke secret tersebut. Gunakan port SSH sebenarnya jika bukan 22.
+`siapin-known-hosts` ke secret tersebut. Gunakan port SSH sebenarnya jika bukan 22.
 Workflow memeriksa host key ini saat menghubungkan ke VPS.
 
 Setelah semua perubahan ini di-commit dan di-push ke `main`, workflow mengambil
