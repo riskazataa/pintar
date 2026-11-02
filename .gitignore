@@ -36,6 +36,9 @@ Thumbs.db
 !.vscode/extensions.json
 
 # PDF investigation artifacts created in the backend project root
-/Backend/pdf-*.cjs
-/Backend/pdf-test-*.pdf
-/Backend/pdf-test-*.png
+/backend/pdf-*.cjs
+/backend/pdf-test-*.pdf
+/backend/pdf-test-*.png
+
+# Generated handbooks, previews, and local run logs
+/output/
