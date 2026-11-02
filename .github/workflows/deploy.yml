@@ -75,7 +75,8 @@ jobs:
           umask 077
           mkdir -p backups
           backup="backups/$(date -u +%Y%m%dT%H%M%SZ)-$2.dump"
-          docker compose exec -T siapin-db pg_dump -U pintar -d pintar -Fc > "$backup.tmp"
+          # Do not let exec consume the remaining script arriving over SSH stdin.
+          docker compose exec -T --interactive=false siapin-db pg_dump -U pintar -d pintar -Fc < /dev/null > "$backup.tmp"
           mv "$backup.tmp" "$backup"
 
           docker compose up -d --wait --wait-timeout 180

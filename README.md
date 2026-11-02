@@ -166,7 +166,7 @@ Pastikan hasilnya `UPDATE 1`, lalu login. Ini hanya perlu dilakukan sekali.
 
 ```sh
 # Backup sebelum update; simpan juga salinannya di luar VPS.
-docker compose exec -T siapin-db pg_dump -U pintar -d pintar -Fc > backup.dump
+docker compose exec -T --interactive=false siapin-db pg_dump -U pintar -d pintar -Fc > backup.dump
 
 # Ambil versi terbaru dan terapkan.
 git pull
