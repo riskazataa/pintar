@@ -42,3 +42,4 @@ Thumbs.db
 
 # Generated handbooks, previews, and local run logs
 /output/
+/backups/

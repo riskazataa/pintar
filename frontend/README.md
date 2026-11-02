@@ -1,5 +1,23 @@
 # React + TypeScript + Vite
 
+## Environment
+
+Untuk deployment Docker di VPS, ikuti [README utama](../README.md).
+Konfigurasi di bawah ini untuk menjalankan frontend secara lokal tanpa Docker.
+
+Salin `.env.example` menjadi `.env` di folder `frontend`:
+
+```sh
+cp .env.example .env
+```
+
+Atur `VITE_API_URL` sesuai alamat backend. Jika kosong atau belum diatur,
+frontend menggunakan `http://localhost:3000`.
+
+Restart dev server setelah mengubah `.env`. Untuk production, atur URL backend
+sebelum build dan build ulang setelah nilainya berubah. Variabel `VITE_*`
+terlihat di browser; jangan isi dengan password atau secret.
+
 This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
 
 Currently, two official plugins are available:

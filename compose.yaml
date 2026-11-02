@@ -1,0 +1,80 @@
+name: pintar
+
+services:
+  siapin-db:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: pintar
+      POSTGRES_USER: pintar
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Isi POSTGRES_PASSWORD di .env}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U pintar -d pintar"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    logging:
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  siapin-api:
+    build: ./backend
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      PORT: "3000"
+      # Gunakan password hex agar aman dimasukkan ke URL tanpa encoding tambahan.
+      DATABASE_URL: postgresql://pintar:${POSTGRES_PASSWORD:?Isi POSTGRES_PASSWORD di .env}@siapin-db:5432/pintar
+      JWT_SECRET: ${JWT_SECRET:?Isi JWT_SECRET di .env}
+      RESEND_API_KEY: ${RESEND_API_KEY:?Isi RESEND_API_KEY di .env}
+      EMAIL_FROM: ${EMAIL_FROM:?Isi EMAIL_FROM di .env}
+      FRONTEND_URL: ${FRONTEND_URL:?Isi FRONTEND_URL di .env}
+    networks:
+      - default
+      - proxy
+    depends_on:
+      siapin-db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"]
+      interval: 10s
+      timeout: 5s
+      start_period: 60s
+      retries: 6
+    logging:
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  siapin-web:
+    build:
+      context: ./frontend
+      args:
+        VITE_API_URL: ${API_URL:-https://api-siapin.dikalaksana.com}
+    restart: unless-stopped
+    networks:
+      - proxy
+    depends_on:
+      siapin-api:
+        condition: service_healthy
+        restart: true
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1/"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+    logging:
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+volumes:
+  postgres_data:
+
+networks:
+  proxy:
+    external: true
+    name: ${PROXY_NETWORK:-manris_manris-network}

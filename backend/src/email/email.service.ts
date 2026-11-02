@@ -18,7 +18,7 @@ export class EmailService {
   ) {
     if (statusRegistrasi === 'APPROVED') {
       await this.resend.emails.send({
-        from: 'onboarding@resend.dev',
+        from: this.configService.get<string>('EMAIL_FROM') || 'onboarding@resend.dev',
         to: emailTujuan,
         subject:
           'Pemberitahuan Persetujuan Akun - Sistem Informasi Penilaian Inovasi Ditjen P2',
@@ -42,7 +42,7 @@ export class EmailService {
         <p>Anda sekarang sudah memiliki akses penuh dan dapat mulai menggunakan sistem.</p>
         
         <div style="text-align: center; margin-top: 30px;">
-          <a href="http://localhost:5173/login" style="background-color: #2563eb; color: #ffffff; padding: 12px 24px; text-decoration: none; border-radius: 6px; font-weight: bold; display: inline-block;">Masuk ke Sistem</a>
+          <a href="${(this.configService.get<string>('FRONTEND_URL') || 'http://localhost:5173').replace(/\/$/, '')}/login" style="background-color: #2563eb; color: #ffffff; padding: 12px 24px; text-decoration: none; border-radius: 6px; font-weight: bold; display: inline-block;">Masuk ke Sistem</a>
         </div>
       </div>
       <div style="background-color: #f9fafb; padding: 15px; text-align: center; font-size: 12px; color: #6b7280; border-top: 1px solid #e5e7eb;">
@@ -53,7 +53,7 @@ export class EmailService {
       });
     } else if (statusRegistrasi === 'REJECTED') {
       await this.resend.emails.send({
-        from: 'onboarding@resend.dev',
+        from: this.configService.get<string>('EMAIL_FROM') || 'onboarding@resend.dev',
         to: emailTujuan,
         subject: 'Pendaftaran Akun Ditolak',
         html: `<p>Yth. ${namaLengkap},</p><p>Mohon maaf, pendaftaran akun Anda ditolak. Silakan hubungi administrator untuk informasi lebih lanjut.</p>`,

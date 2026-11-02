@@ -1,0 +1,84 @@
+name: Deploy VPS
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      VPS_HOST: ${{ secrets.VPS_HOST }}
+      VPS_USER: ${{ secrets.VPS_USER }}
+      VPS_PORT: ${{ secrets.VPS_PORT || '22' }}
+      VPS_PATH: ${{ secrets.VPS_PATH }}
+      VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+      VPS_KNOWN_HOSTS: ${{ secrets.VPS_KNOWN_HOSTS }}
+    steps:
+      - name: Build, backup, and deploy over SSH
+        shell: bash
+        run: |
+          set -euo pipefail
+          : "${VPS_HOST:?Set VPS_HOST secret}"
+          : "${VPS_USER:?Set VPS_USER secret}"
+          : "${VPS_PATH:?Set VPS_PATH secret}"
+          : "${VPS_SSH_KEY:?Set VPS_SSH_KEY secret}"
+          : "${VPS_KNOWN_HOSTS:?Set VPS_KNOWN_HOSTS secret}"
+          # Remote arguments must remain literal when OpenSSH invokes its shell.
+          [[ "$VPS_PATH" =~ ^/[-a-zA-Z0-9_./]+$ ]] || {
+            echo 'VPS_PATH harus path absolut tanpa spasi atau karakter shell.'
+            exit 1
+          }
+          [[ "$VPS_PATH" != / ]]
+          [[ "$GITHUB_SHA" =~ ^[a-f0-9]{40}$ ]]
+          [[ "$VPS_PORT" =~ ^[0-9]+$ ]]
+
+          ssh_dir=$(mktemp -d)
+          trap 'rm -rf "$ssh_dir"' EXIT
+          printf '%s\n' "$VPS_SSH_KEY" > "$ssh_dir/key"
+          printf '%s\n' "$VPS_KNOWN_HOSTS" > "$ssh_dir/known_hosts"
+          chmod 600 "$ssh_dir/key" "$ssh_dir/known_hosts"
+
+          ssh -i "$ssh_dir/key" -p "$VPS_PORT" \
+            -o BatchMode=yes -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes \
+            -o UserKnownHostsFile="$ssh_dir/known_hosts" \
+            -o ConnectTimeout=15 -o ServerAliveInterval=30 \
+            "$VPS_USER@$VPS_HOST" bash -se -- "$VPS_PATH" "$GITHUB_SHA" <<'DEPLOY'
+          set -euo pipefail
+          cd "$1"
+          test -d .git
+          test -f .env || { echo 'Buat .env di VPS terlebih dahulu.'; exit 1; }
+          git diff --exit-code --quiet
+          git diff --cached --exit-code --quiet
+          git fetch --no-tags origin main
+          git checkout main
+          git merge --ff-only "$2"
+          test "$(git rev-parse HEAD)" = "$2" || {
+            echo 'HEAD VPS berbeda dari commit workflow; deploy dihentikan.'
+            exit 1
+          }
+
+          docker compose config --quiet
+          # Build failure leaves the running application untouched.
+          docker compose build
+          docker compose up -d siapin-db --wait --wait-timeout 120
+          umask 077
+          mkdir -p backups
+          backup="backups/$(date -u +%Y%m%dT%H%M%SZ)-$2.dump"
+          docker compose exec -T siapin-db pg_dump -U pintar -d pintar -Fc > "$backup.tmp"
+          mv "$backup.tmp" "$backup"
+
+          docker compose up -d --wait --wait-timeout 180
+          docker compose ps
+          echo "Deploy selesai: $2"
+          DEPLOY
