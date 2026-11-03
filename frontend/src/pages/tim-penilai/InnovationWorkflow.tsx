@@ -3,6 +3,7 @@ import { Link, useParams } from 'react-router-dom'
 import axios from 'axios'
 import { getUsulanDetail, getAkunTimPenilai, assignPenilai, downloadHasilEvaluasiPdf, getBAColumns } from '../../services/inovasi.service'
 import { getStatusPresentation } from '../../utils/inovasi-status'
+import { getReviewerStageName } from '../../utils/tahap-reviewer'
 import Tahap1DetailEvaluasi from './Tahap1DetailEvaluasi'
 import Tahap1DetailUsulan from './Tahap1DetailUsulan'
 import { exportToExcel } from './Tahap1Hasil'
@@ -77,10 +78,10 @@ export default function InnovationWorkflow() {
       if (format === 'pdf') {
         const response = await downloadHasilEvaluasiPdf(id, tahap)
         const url = URL.createObjectURL(response.data)
-        const link = document.createElement('a'); link.href = url; link.download = `BA_Tahap_${tahap}_${data.judul}.pdf`; link.click(); URL.revokeObjectURL(url)
+        const link = document.createElement('a'); link.href = url; link.download = `BA_${getReviewerStageName(tahap).replace(/ /g, '_')}_${data.judul}.pdf`; link.click(); URL.revokeObjectURL(url)
       } else {
         const [detail, columns] = await Promise.all([getUsulanDetail(id, tahap), getBAColumns(tahap)])
-        await exportToExcel(detail.data?.data ?? detail.data, tahap, columns.data.columns, columns.data.questionTitle)
+        await exportToExcel(detail.data?.data ?? detail.data, tahap, columns.data.columns, columns.data.questionTitle, columns.data.reportHeader)
       }
     } catch { setError('Gagal mengunduh berita acara. Silakan coba lagi.') }
     finally { setBusy(false) }
@@ -88,8 +89,8 @@ export default function InnovationWorkflow() {
   if (!data) return <div className="rounded-2xl border bg-white p-8">{error || 'Memuat inovasi...'}</div>
   const base = `/tim-penilai/usulan/${id}`
   const stageRows = [
-    { tahap: 1, title: 'Penilaian Tahap 1', detail: data, locked: false },
-    { tahap: 2, title: 'Penilaian Tahap 2', detail: stage2, locked: data.status !== 'SELESAI_EVALUASI' },
+    { tahap: 1, title: getReviewerStageName(1), detail: data, locked: false },
+    { tahap: 2, title: getReviewerStageName(2), detail: stage2, locked: data.status !== 'SELESAI_EVALUASI' },
   ]
   const assignmentDetail = assignment ? stageRows[assignment - 1].detail : null
   const assignmentReviewers = new Set((assignmentDetail?.penilai ?? []).map((r: any) => Number(r.id)))
@@ -99,8 +100,8 @@ export default function InnovationWorkflow() {
   if (section === 'self-assessment') return <Tahap1DetailUsulan backPath={base} />
   if (section === 'tahap-1') return <Tahap1DetailEvaluasi key={`${id}-1-${version}`} tahap={1} onUpdated={load} />
   if (section === 'tahap-2') {
-    if (data.status !== 'SELESAI_EVALUASI') return <div className="rounded-2xl border bg-white p-8"><BackLink to={base}>Kembali ke tahapan</BackLink><p className="mt-4 text-slate-600">Tahap 2 akan tersedia setelah Tahap 1 selesai.</p></div>
-    if (!stage2) return <div className="rounded-2xl border bg-white p-8">Memuat penilaian Tahap 2...</div>
+    if (data.status !== 'SELESAI_EVALUASI') return <div className="rounded-2xl border bg-white p-8"><BackLink to={base}>Kembali ke tahapan</BackLink><p className="mt-4 text-slate-600">Penilaian Akhir tersedia setelah Seleksi Awal selesai.</p></div>
+    if (!stage2) return <div className="rounded-2xl border bg-white p-8">Memuat Penilaian Akhir...</div>
     return <Tahap1DetailEvaluasi key={`${id}-2-${version}`} tahap={2} onUpdated={load} />
   }
   return <div className="space-y-6 pb-8">
@@ -126,10 +127,10 @@ export default function InnovationWorkflow() {
             const status = getStatusPresentation(detail ?? {}, tahap)
             return <tr key={tahap}>
               <td className="whitespace-nowrap p-4 text-sm font-semibold text-slate-800">{title}</td>
-              <td className="whitespace-nowrap p-4"><span className={`inline-flex whitespace-nowrap rounded-full border px-2.5 py-1 text-xs font-semibold ${locked || !reviewers.length ? 'border-slate-200 bg-slate-50 text-slate-500' : status.className}`}>{locked ? 'Menunggu Tahap 1 Selesai' : !reviewers.length ? 'Belum Ditugaskan' : status.label}</span></td>
+              <td className="whitespace-nowrap p-4"><span className={`inline-flex whitespace-nowrap rounded-full border px-2.5 py-1 text-xs font-semibold ${locked || !reviewers.length ? 'border-slate-200 bg-slate-50 text-slate-500' : status.className}`}>{locked ? 'Menunggu Seleksi Awal Selesai' : !reviewers.length ? 'Belum Ditugaskan' : status.label}</span></td>
               <td className="p-4"><div className="mb-2 flex justify-between gap-4 text-xs text-slate-500"><span>{signed} dari {reviewers.length} penilai</span><span>{progress}%</span></div><div className="h-2 overflow-hidden rounded-full bg-slate-100"><div className="h-full rounded-full bg-emerald-500" style={{ width: `${progress}%` }} /></div><div className="mt-2 flex flex-wrap gap-1">{reviewers.map((r: any) => <span key={r.id} title={signedIds.has(String(r.id)) ? 'Sudah menandatangani' : 'Belum menandatangani'} className={`rounded-md px-2 py-1 text-xs ${signedIds.has(String(r.id)) ? 'bg-emerald-50 text-emerald-700' : 'bg-slate-100 text-slate-500'}`}>{r.nama_lengkap}</span>)}</div></td>
               <td className="p-4">
-                {locked ? <span className="inline-flex items-center gap-1.5 whitespace-nowrap rounded-lg bg-slate-100 px-2.5 py-1.5 text-xs text-slate-500"><svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth={1.8} viewBox="0 0 24 24"><rect x="5" y="10" width="14" height="11" rx="2" /><path strokeLinecap="round" strokeLinejoin="round" d="M8 10V7a4 4 0 0 1 8 0v3" /></svg>Tahap belum tersedia</span> : <div className="flex w-full items-center justify-end gap-2">
+                {locked ? <span className="inline-flex items-center gap-1.5 whitespace-nowrap rounded-lg bg-slate-100 px-2.5 py-1.5 text-xs text-slate-500"><svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth={1.8} viewBox="0 0 24 24"><rect x="5" y="10" width="14" height="11" rx="2" /><path strokeLinecap="round" strokeLinejoin="round" d="M8 10V7a4 4 0 0 1 8 0v3" /></svg>Belum tersedia</span> : <div className="flex w-full items-center justify-end gap-2">
                   <Link to={`${base}/tahap-${tahap}`} className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-violet-200 bg-violet-50 px-2.5 py-1.5 text-xs font-semibold text-violet-700 shadow-sm transition hover:border-violet-300 hover:bg-violet-100"><svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth={1.8} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M9 5.25H6A2.25 2.25 0 0 0 3.75 7.5v12A2.25 2.25 0 0 0 6 21.75h12a2.25 2.25 0 0 0 2.25-2.25v-3M14.25 3.75h6v6m-9 5.25 9-9" /></svg>Evaluasi & Hasil</Link>
                   <div className="relative inline-block" ref={openActions === tahap ? actionMenuRef : undefined}>
                   <button type="button" aria-label={`Aksi ${title}`} aria-haspopup="menu" aria-expanded={openActions === tahap} onClick={() => { setOpenActions((current) => current === tahap ? null : tahap); setOpenExport(false) }} className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-600 shadow-sm transition hover:border-violet-200 hover:bg-violet-50 hover:text-violet-700 focus:outline-none focus:ring-2 focus:ring-violet-200">
@@ -160,7 +161,7 @@ export default function InnovationWorkflow() {
     {assignment && <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-slate-950/45 p-4 backdrop-blur-[2px]" onMouseDown={(event) => { if (event.target === event.currentTarget) setAssignment(null) }}>
       <section role="dialog" aria-modal="true" aria-labelledby="assignment-modal-title" className="my-auto w-full max-w-3xl rounded-3xl bg-white p-6 shadow-2xl sm:p-9">
         <div className="mb-7 flex items-start justify-between border-b border-slate-200 pb-5">
-          <h2 id="assignment-modal-title" className="text-xl font-semibold text-slate-800 sm:text-2xl">Assign Reviewer Tahap {assignment}</h2>
+          <h2 id="assignment-modal-title" className="text-xl font-semibold text-slate-800 sm:text-2xl">Atur Penilai · {assignment ? getReviewerStageName(assignment) : ''}</h2>
           <button onClick={() => setAssignment(null)} aria-label="Tutup" className="rounded-lg p-1 text-slate-400 transition hover:bg-slate-100 hover:text-slate-700"><svg className="h-6 w-6" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M6 18 18 6M6 6l12 12" /></svg></button>
         </div>
         <div className="space-y-7">

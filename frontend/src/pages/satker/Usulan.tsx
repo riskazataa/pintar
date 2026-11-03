@@ -16,6 +16,7 @@ import { getStatusPresentation } from '../../utils/inovasi-status'
 import TablePagination from '../../components/TablePagination'
 import TableToolbar, { type TableSortOrder } from '../../components/TableToolbar'
 import { useNotifications } from '../../components/NotificationProvider'
+import { KRITERIA_PEMBARUAN, normalizeKriteriaInovasi } from '../../utils/kriteria-inovasi'
 
 interface UsulanItem {
   id: string
@@ -41,7 +42,7 @@ interface PaginationMeta {
 }
 
 // PERBAIKAN 1: Hapus kategori dari interface AssessmentQuestion
-interface AssessmentQuestion { id: string | number; pertanyaan: string; satker_locked?: boolean; question_title_override?: string; column_titles?: string[]; is_header?: boolean; parent_id?: string | number | null }
+interface AssessmentQuestion { id: string | number; pertanyaan: string; satker_lock_mode?: 'NONE' | 'RINCIAN' | 'ROW'; question_title_override?: string; column_titles?: string[]; is_header?: boolean; parent_id?: string | number | null }
 
 interface AnswerEntry {
   question_id: string
@@ -55,7 +56,6 @@ interface FormErrors {
   namaInovasi?: string
   tahun?: string
   jenisInovasi?: string
-  jenisLainnya?: string
   linkDataDukung?: string
   penanggungJawab?: string
   noWhatsapp?: string
@@ -73,11 +73,11 @@ const STATUS_OPTIONS = [
 const JENIS_INOVASI_OPTIONS = [
   'Kebijakan/regulasi', 'Teknologi Kesehatan', 'Teknologi sistem informasi',
   'Pelayanan publik', 'Budaya kerja', 'Metode kerja', 'MoU/perjanjian',
-  'Produk prototipe', 'Lainnya',
+  'Produk prototipe',
 ]
 
 const KRITERIA_INOVASI_OPTIONS = [
-  'Kebaharuan', 'Orisinil', 'Modifikasi', 'Memudahkan pelayanan',
+  KRITERIA_PEMBARUAN, 'Memudahkan pelayanan',
   'Mempercepat pelayanan', 'Disebarluaskan', 'Bermanfaat', 'Spesifik',
   'Berkelanjutan', 'Solusi/upaya pemecahan masalah',
   'Dapat diaplikasikan di Internal dan atau eksternal', 'Percontohan nasional',
@@ -155,7 +155,6 @@ export default function Usulan() {
   const [tahun, setTahun] = useState(new Date().getFullYear().toString())
   const [jenisInovasi, setJenisInovasi] = useState<string[]>([])
   const [jenisPickerOpen, setJenisPickerOpen] = useState(false)
-  const [jenisLainnya, setJenisLainnya] = useState('')
   const [kriteria, setKriteria] = useState<string[]>([])
   const [linkDataDukung, setLinkDataDukung] = useState('')
   const [penanggungJawab, setPenanggungJawab] = useState('')
@@ -235,7 +234,7 @@ export default function Usulan() {
   }
 
   const openCreate = () => {
-    setEditingId(null); setStep(1); setNamaInovasi(''); setTahun(new Date().getFullYear().toString()); setJenisInovasi([]); setJenisPickerOpen(false); setJenisLainnya(''); setKriteria([]); setLinkDataDukung(''); setPenanggungJawab(''); setNoWhatsapp(''); setAnswers({}); setQuestions([]); setAssessmentColumns([]); setCatatanPerbaikan(''); setDetailUsulan(null); setFormErrors({}); setShowAssessmentErrors(false); setModalOpen(false)
+    setEditingId(null); setStep(1); setNamaInovasi(''); setTahun(new Date().getFullYear().toString()); setJenisInovasi([]); setJenisPickerOpen(false); setKriteria([]); setLinkDataDukung(''); setPenanggungJawab(''); setNoWhatsapp(''); setAnswers({}); setQuestions([]); setAssessmentColumns([]); setCatatanPerbaikan(''); setDetailUsulan(null); setFormErrors({}); setShowAssessmentErrors(false); setModalOpen(false)
     navigate('/satker/usulan/tambah')
   }
 
@@ -248,12 +247,15 @@ export default function Usulan() {
       setNamaInovasi(detail.judul || '')
       setTahun(detail.tahun?.toString() || new Date().getFullYear().toString())
       const savedTypes = Array.isArray(detail.jenis_inovasi_pilihan) && detail.jenis_inovasi_pilihan.length
-        ? detail.jenis_inovasi_pilihan
-        : detail.jenis_inovasi ? [JENIS_INOVASI_OPTIONS.includes(detail.jenis_inovasi) ? detail.jenis_inovasi : 'Lainnya'] : []
+        ? detail.jenis_inovasi_pilihan.flatMap((type: string) => {
+          if (type !== 'Lainnya') return [type]
+          const legacyCustomType = detail.jenis_inovasi_lainnya || (detail.jenis_inovasi && !detail.jenis_inovasi_pilihan.includes(detail.jenis_inovasi) ? detail.jenis_inovasi : 'Lainnya')
+          return [legacyCustomType]
+        })
+        : detail.jenis_inovasi ? [detail.jenis_inovasi === 'Lainnya' && detail.jenis_inovasi_lainnya ? detail.jenis_inovasi_lainnya : detail.jenis_inovasi] : []
       setJenisInovasi(savedTypes)
       setJenisPickerOpen(false)
-      setJenisLainnya(detail.jenis_inovasi_lainnya || (savedTypes.includes('Lainnya') && !JENIS_INOVASI_OPTIONS.includes(detail.jenis_inovasi) ? detail.jenis_inovasi : ''))
-      setKriteria(detail.kriteria_inovasi || [])
+      setKriteria(normalizeKriteriaInovasi(detail.kriteria_inovasi))
       setLinkDataDukung(detail.link_data_dukung || '')
       setPenanggungJawab(detail.pic_nama || '')
       setNoWhatsapp(detail.pic_telp || '')
@@ -273,7 +275,6 @@ export default function Usulan() {
       if (!namaInovasi.trim()) errors.namaInovasi = 'Nama inovasi wajib diisi.'
       if (!tahun.trim()) errors.tahun = 'Tahun inovasi wajib diisi.'
       if (!jenisInovasi.length) errors.jenisInovasi = 'Pilih minimal satu jenis inovasi.'
-      if (jenisInovasi.includes('Lainnya') && !jenisLainnya.trim()) errors.jenisLainnya = 'Jelaskan jenis inovasi lainnya.'
       if (!linkDataDukung.trim()) errors.linkDataDukung = 'Link data dukung wajib diisi.'
       else if (!isValidSupportLink(linkDataDukung)) errors.linkDataDukung = 'Masukkan tautan lengkap yang diawali http:// atau https://.'
       if (!penanggungJawab.trim()) errors.penanggungJawab = 'Nama penanggung jawab wajib diisi.'
@@ -290,7 +291,8 @@ export default function Usulan() {
 
     setSaving(true)
     const missingColumn = assessmentColumns.find((column) => column.required && column.type !== 'readonly' && Object.values(answers).some((answer) => {
-      if (questions.find((q) => String(q.id) === answer.question_id)?.is_header || questions.find((q) => String(q.id) === answer.question_id)?.satker_locked) return false
+      const question = questions.find((q) => String(q.id) === answer.question_id)
+      if (question?.is_header || question?.satker_lock_mode === 'ROW') return false
       const value = column.type === 'readonly'
         ? column.defaultValue
         : answer.custom_values?.[column.key] ?? (column.key === 'jawaban_boolean' ? answer.jawaban_boolean : column.key === 'catatan_string' ? answer.catatan_string : column.key === 'link' ? answer.link : undefined)
@@ -299,7 +301,7 @@ export default function Usulan() {
     }))
     if (missingColumn) { setShowAssessmentErrors(true); notify('Kolom "' + missingColumn.title + '" wajib diisi pada pertanyaan yang masih kosong.', 'warning'); setSaving(false); return }
     const payload = {
-      judul: namaInovasi, tahun: parseInt(tahun, 10), jenis_inovasi: jenisInovasi[0] === 'Lainnya' ? jenisLainnya.trim() : jenisInovasi[0], jenis_inovasi_pilihan: jenisInovasi, jenis_inovasi_lainnya: jenisInovasi.includes('Lainnya') ? jenisLainnya.trim() : '', kriteria_inovasi: kriteria, link_data_dukung: linkDataDukung, pic_nama: penanggungJawab, pic_telp: noWhatsapp,
+      judul: namaInovasi, tahun: parseInt(tahun, 10), jenis_inovasi: jenisInovasi[0], jenis_inovasi_pilihan: jenisInovasi, jenis_inovasi_lainnya: '', kriteria_inovasi: normalizeKriteriaInovasi(kriteria), link_data_dukung: linkDataDukung, pic_nama: penanggungJawab, pic_telp: noWhatsapp,
       assessment_answers: Object.values(answers).map((answer) => ({
         question_id: parseInt(answer.question_id, 10) || 0,
         jawaban_boolean: answer.jawaban_boolean,
@@ -343,7 +345,7 @@ export default function Usulan() {
     return {
       id: questionId,
       question_id: Number(question.id),
-      question: { id: Number(question.id), pertanyaan: question.pertanyaan, is_header: question.is_header, satker_locked: question.satker_locked, question_title_override: question.question_title_override, column_titles: question.column_titles, parent_id: question.parent_id ? Number(question.parent_id) : null },
+      question: { id: Number(question.id), pertanyaan: question.pertanyaan, is_header: question.is_header, satker_lock_mode: question.satker_lock_mode, question_title_override: question.question_title_override, column_titles: question.column_titles, parent_id: question.parent_id ? Number(question.parent_id) : null },
       jawaban_boolean: answer.jawaban_boolean,
       catatan_string: answer.catatan_string,
       link: answer.link || '',
@@ -502,21 +504,14 @@ export default function Usulan() {
                       <label className={`mb-1 block text-sm font-medium ${formErrors.jenisInovasi ? 'text-red-600' : 'text-gray-700'}`}>Jenis Inovasi <span className="text-red-500">*</span></label>
                       <div className="relative">
                         <div className={`flex min-h-11 w-full items-center justify-between gap-2 rounded-lg border bg-white px-3 py-2 text-sm focus-within:ring-2 ${formErrors.jenisInovasi ? 'border-red-400 focus-within:ring-red-100' : 'border-gray-300 focus-within:border-blue-500 focus-within:ring-blue-100'}`}>
-                          <span className="flex min-w-0 flex-wrap gap-1.5">{jenisInovasi.map((jenis) => <span key={jenis} className="inline-flex items-center gap-1 rounded-md bg-blue-50 px-2 py-1 text-xs font-medium text-blue-700">{jenis === 'Lainnya' && jenisLainnya.trim() ? jenisLainnya : jenis}<button type="button" aria-label={`Hapus ${jenis}`} onClick={() => setJenisInovasi((items) => items.filter((item) => item !== jenis))} className="ml-1 text-blue-400 hover:text-blue-700">×</button></span>)}</span>
+                          <span className="flex min-w-0 flex-wrap gap-1.5">{jenisInovasi.map((jenis) => <span key={jenis} className="inline-flex items-center gap-1 rounded-md bg-blue-50 px-2 py-1 text-xs font-medium text-blue-700">{jenis}<button type="button" aria-label={`Hapus ${jenis}`} onClick={() => setJenisInovasi((items) => items.filter((item) => item !== jenis))} className="ml-1 text-blue-400 hover:text-blue-700">×</button></span>)}</span>
                           <button type="button" aria-expanded={jenisPickerOpen} aria-label="Pilih jenis inovasi" onClick={() => setJenisPickerOpen((open) => !open)} className="min-w-28 shrink-0 text-right text-gray-500">{jenisInovasi.length ? '+ Tambah jenis' : 'Pilih jenis'} ⌄</button>
                         </div>
-                        {jenisPickerOpen && <div className="absolute left-0 right-0 z-30 mt-1 max-h-56 overflow-y-auto rounded-xl border border-gray-200 bg-white p-1.5 shadow-xl">{JENIS_INOVASI_OPTIONS.map((jenis) => <label key={jenis} className="flex cursor-pointer items-center gap-2 rounded-lg px-3 py-2 text-sm text-gray-700 hover:bg-blue-50"><input type="checkbox" checked={jenisInovasi.includes(jenis)} onChange={() => { setJenisInovasi((items) => items.includes(jenis) ? items.filter((item) => item !== jenis) : [...items, jenis]); setFormErrors((errors) => ({ ...errors, jenisInovasi: undefined, jenisLainnya: undefined })) }} className="h-4 w-4 rounded border-gray-300 accent-blue-600" />{jenis}</label>)}<button type="button" onClick={() => setJenisPickerOpen(false)} className="mt-1 w-full rounded-lg bg-blue-50 py-2 text-xs font-semibold text-blue-700">Selesai</button></div>}
+                        {jenisPickerOpen && <div className="absolute left-0 right-0 z-30 mt-1 max-h-56 overflow-y-auto rounded-xl border border-gray-200 bg-white p-1.5 shadow-xl">{JENIS_INOVASI_OPTIONS.map((jenis) => <label key={jenis} className="flex cursor-pointer items-center gap-2 rounded-lg px-3 py-2 text-sm text-gray-700 hover:bg-blue-50"><input type="checkbox" checked={jenisInovasi.includes(jenis)} onChange={() => { setJenisInovasi((items) => items.includes(jenis) ? items.filter((item) => item !== jenis) : [...items, jenis]); setFormErrors((errors) => ({ ...errors, jenisInovasi: undefined })) }} className="h-4 w-4 rounded border-gray-300 accent-blue-600" />{jenis}</label>)}<button type="button" onClick={() => setJenisPickerOpen(false)} className="mt-1 w-full rounded-lg bg-blue-50 py-2 text-xs font-semibold text-blue-700">Selesai</button></div>}
                       </div>
                       {formErrors.jenisInovasi && <p className="mt-1 text-xs text-red-600">{formErrors.jenisInovasi}</p>}
                     </div>
                   </div>
-                  {jenisInovasi.includes('Lainnya') && (
-                    <div>
-                      <label className={`mb-1 block text-sm font-medium ${formErrors.jenisLainnya ? 'text-red-600' : 'text-gray-700'}`}>Jenis Inovasi (Lainnya) <span className="text-red-500">*</span></label>
-                      <input type="text" value={jenisLainnya} onChange={(e) => { setJenisLainnya(e.target.value); setFormErrors((errors) => ({ ...errors, jenisLainnya: undefined })) }} placeholder="Sebutkan jenis inovasi" aria-invalid={Boolean(formErrors.jenisLainnya)} className={`w-full rounded-lg border px-4 py-2.5 text-sm outline-none focus:ring-2 ${formErrors.jenisLainnya ? 'border-red-400 bg-red-50/40 focus:border-red-500 focus:ring-red-100' : 'border-gray-300 focus:border-blue-500 focus:ring-blue-200'}`} />
-                      {formErrors.jenisLainnya && <p className="mt-1 text-xs text-red-600">{formErrors.jenisLainnya}</p>}
-                    </div>
-                  )}
                   <div>
                     <label className="mb-2 block text-sm font-medium text-gray-700">Kriteria Inovasi</label>
                     <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">

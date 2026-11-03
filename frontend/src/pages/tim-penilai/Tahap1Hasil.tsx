@@ -1,3 +1,8 @@
+import { CONCLUSION_MARKER, conclusionText } from '../../utils/ba-conclusion'
+import { addFinalSignatures } from '../../utils/ba-excel-signatures'
+import { addBAExcelHeader, BA_TABLE_START_ROW } from '../../utils/ba-excel-header'
+import { buildBAExcelRows } from '../../utils/ba-excel-rows'
+import type { BAReportHeader } from '../../services/inovasi.service'
 import { getBAColumns } from '../../services/inovasi.service'
 import type { BAColumn } from '../../services/inovasi.service'
 import { useEffect, useState, useCallback } from 'react'
@@ -5,6 +10,7 @@ import axios from 'axios'
 import { getUsulanSelesai, getUsulanDetail, downloadHasilEvaluasiPdf } from '../../services/inovasi.service'
 import { getSatker } from '../../services/satker.service'
 import { getStatusPresentation } from '../../utils/inovasi-status'
+import { getReviewerStageName } from '../../utils/tahap-reviewer'
 import TablePagination from '../../components/TablePagination'
 import TableToolbar, { type TableSortOrder } from '../../components/TableToolbar'
 import ExcelJS from 'exceljs'
@@ -84,24 +90,26 @@ async function getErrorMessage(err: unknown): Promise<string> {
   return err instanceof Error ? err.message : 'Terjadi kesalahan'
 }
 
-export async function exportToExcel(data: any, tahap: number, columns: BAColumn[], _questionTitle = 'Kriteria Penilaian') {
+export async function exportToExcel(data: any, tahap: number, columns: BAColumn[], _questionTitle = 'Kriteria Penilaian', reportHeader?: BAReportHeader) {
   const workbook = new ExcelJS.Workbook()
   const worksheet = workbook.addWorksheet('Berita Acara')
   worksheet.columns = [{ width: 8 }, { width: 55 }, ...columns.map((c) => ({ width: c.type === 'checkbox' ? 16 : 32 }))]
   const count = columns.length + 2
-  worksheet.mergeCells(1, 1, 1, count)
-  worksheet.getCell(1, 1).value = tahap === 2 ? 'Berita Acara Penilaian Inovasi Tahap 2' : 'Form Seleksi Awal Penilaian Inovasi'
-  worksheet.getCell(1, 1).font = { name: 'Times New Roman', size: 14, bold: true }
-  worksheet.getCell(1, 1).alignment = { horizontal: 'center', vertical: 'middle' }
-  worksheet.getRow(1).height = 32
-  worksheet.getCell('A3').value = `Unit: ${data.satker?.nama_satker || '-'}`
-  worksheet.getCell('A4').value = `Inovasi: ${data.judul || '-'}`
+  await addBAExcelHeader(workbook, worksheet, count, data, reportHeader)
   const answers = data.assessment_answers ?? []
-  const rows = answers.filter((a: any) => !a.question?.parent_id).flatMap((p: any, i: number) => [{ answer: p, no: `${i + 1}`, child: false }, ...answers.filter((a: any) => a.question?.parent_id === p.question_id).map((a: any, j: number) => ({ answer: a, no: p.question?.is_header ? String(j + 1) : `${i + 1}.${String.fromCharCode(97 + j)}`, child: true }))])
+  const rows = buildBAExcelRows(answers)
   let rowOffset = 0
   const emphasizedRows = new Set<number>()
+  const conclusionRows = new Set<number>()
   rows.forEach(({ answer, no, child }: any, index: number) => {
-    const rowNumber = index + 6 + rowOffset
+    const rowNumber = index + BA_TABLE_START_ROW + rowOffset
+    if (answer.question?.question_title_override === CONCLUSION_MARKER) {
+      worksheet.mergeCells(rowNumber, 1, rowNumber, count);
+      worksheet.getCell(rowNumber, 1).value = answer.question.pertanyaan + '\n' + conclusionText(answer);
+      conclusionRows.add(rowNumber);
+      emphasizedRows.add(rowNumber);
+      return;
+    }
     if (answer.question?.is_header) {
       worksheet.mergeCells(rowNumber, 1, rowNumber, count);
       const cell = worksheet.getCell(rowNumber, 1);
@@ -119,34 +127,37 @@ export async function exportToExcel(data: any, tahap: number, columns: BAColumn[
       return c.type === 'checkbox' ? (value ? 'V' : '') : value ?? ''
     })]
   })
-  for (let row = 6; row < 6 + rows.length + rowOffset; row++) {
+  for (let row = BA_TABLE_START_ROW; row < BA_TABLE_START_ROW + rows.length + rowOffset; row++) {
     worksheet.getRow(row).eachCell({ includeEmpty: true }, (cell) => {
       cell.font = { name: 'Times New Roman', size: 10, bold: emphasizedRows.has(row) }
       cell.alignment = { wrapText: true, vertical: 'middle' }
       cell.border = { top: { style: 'thin' }, bottom: { style: 'thin' }, left: { style: 'thin' }, right: { style: 'thin' } }
     })
-    worksheet.getRow(row).height = 36
+    worksheet.getRow(row).height = conclusionRows.has(row) ? 32 + Math.ceil(String(worksheet.getCell(row, 1).value ?? '').length / 90) * 16 : 36
   }
   const signatures = data.signatures ?? data.usulan_signatures ?? []
-  signatures.forEach((sig: any, index: number) => {
-    const column = index % 2 === 0 ? 2 : Math.max(4, count)
-    const row = 8 + rows.length + Math.floor(index / 2) * 9
-    for (const [offset, value] of [[0, sig.jabatan || sig.role || '-'], [4, sig.nama || sig.user?.nama_lengkap || '-'], [5, `NIP ${sig.nip || '-'}`]] as const) {
-      const cell = worksheet.getCell(row + offset, column)
-      cell.value = value; cell.font = { name: 'Times New Roman', size: 11, bold: offset === 0 }
-      cell.alignment = { horizontal: 'center', wrapText: true }
-    }
-    worksheet.getRow(row).height = 35
-    if (sig.ttd_image) {
-      const match = /^data:image\/(png|jpe?g|gif);base64,/i.exec(sig.ttd_image)
-      if (match) {
-        const extension = match[1].toLowerCase() === 'jpg' ? 'jpeg' : match[1].toLowerCase()
-        const image = workbook.addImage({ base64: sig.ttd_image, extension: extension as 'png' | 'jpeg' | 'gif' })
-        worksheet.addImage(image, { tl: { col: column - 1 + 0.1, row }, ext: { width: 140, height: 55 } })
+  if (tahap === 2) addFinalSignatures(workbook, worksheet, count, BA_TABLE_START_ROW + 2 + rows.length + rowOffset, signatures, reportHeader?.dateText)
+  else {
+    signatures.forEach((sig: any, index: number) => {
+      const column = index % 2 === 0 ? 2 : Math.max(4, count)
+      const row = BA_TABLE_START_ROW + 2 + rows.length + rowOffset + Math.floor(index / 2) * 9
+      for (const [offset, value] of [[0, sig.jabatan || sig.role || '-'], [4, sig.nama || sig.user?.nama_lengkap || '-'], [5, `NIP ${sig.nip || '-'}`]] as const) {
+        const cell = worksheet.getCell(row + offset, column)
+        cell.value = value; cell.font = { name: 'Times New Roman', size: 11, bold: offset === 0 }
+        cell.alignment = { horizontal: 'center', wrapText: true }
       }
-    }
-  })
-  worksheet.views = [{ state: 'frozen', ySplit: 5, xSplit: 2 }]
+      worksheet.getRow(row).height = 35
+      if (sig.ttd_image) {
+        const match = /^data:image\/(png|jpe?g|gif);base64,/i.exec(sig.ttd_image)
+        if (match) {
+          const extension = match[1].toLowerCase() === 'jpg' ? 'jpeg' : match[1].toLowerCase()
+          const image = workbook.addImage({ base64: sig.ttd_image, extension: extension as 'png' | 'jpeg' | 'gif' })
+          worksheet.addImage(image, { tl: { col: column - 1 + 0.1, row }, ext: { width: 140, height: 55 } })
+        }
+      }
+    })
+  }
+  worksheet.views = [{ state: 'frozen', ySplit: BA_TABLE_START_ROW - 1, xSplit: 2 }]
   const buffer = await workbook.xlsx.writeBuffer()
   saveAs(new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }), `BA_Inovasi${tahap === 2 ? '_Tahap_2' : ''}_${sanitizeFileName(data.judul || 'Inovasi')}.xlsx`)
 }
@@ -228,7 +239,7 @@ export default function Tahap1Hasil({ tahap = 1 }: { tahap?: number }) {
       const res = await getUsulanDetail(item.id, tahap)
       const detailData = res.data?.data || res.data
       const columns = await getBAColumns(tahap)
-      await exportToExcel(detailData, tahap, columns.data.columns, columns.data.questionTitle)
+      await exportToExcel(detailData, tahap, columns.data.columns, columns.data.questionTitle, columns.data.reportHeader)
     } catch {
       notify('Gagal memuat detail usulan untuk export Excel.', 'error')
     } finally {
@@ -240,8 +251,8 @@ export default function Tahap1Hasil({ tahap = 1 }: { tahap?: number }) {
     <div className="space-y-6">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h2 className="text-lg font-semibold text-gray-800">Hasil Evaluasi Tahap {tahap}</h2>
-          <p className="text-sm text-gray-500">Penilaian Tahap {tahap} — Usulan dengan status Selesai Evaluasi</p>
+          <h2 className="text-lg font-semibold text-gray-800">Hasil Evaluasi {getReviewerStageName(tahap)}</h2>
+          <p className="text-sm text-gray-500">{getReviewerStageName(tahap)} — Usulan dengan status Selesai Evaluasi</p>
         </div>
         <button onClick={fetchList} className="inline-flex items-center gap-2 rounded-lg border border-gray-300 bg-white px-4 py-2.5 text-sm font-medium text-gray-700 shadow-sm transition hover:bg-gray-50">
           <svg className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>

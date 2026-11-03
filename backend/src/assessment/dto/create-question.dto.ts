@@ -29,8 +29,8 @@ export class CreateQuestionDto {
   column_titles?: string[];
 
   @IsOptional()
-  @IsBoolean()
-  satker_locked?: boolean;
+  @IsIn(['NONE', 'RINCIAN', 'ROW'])
+  satker_lock_mode?: string;
 
   @IsString()
   pertanyaan: string;

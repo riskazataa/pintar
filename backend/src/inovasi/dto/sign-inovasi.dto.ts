@@ -1,6 +1,10 @@
-import { IsNumber, IsString, IsNotEmpty, IsOptional, IsIn } from 'class-validator';
+import { IsNumber, IsString, IsNotEmpty, IsOptional, IsIn, Matches } from 'class-validator';
 
 export class SignInovasiDto {
+  @IsOptional()
+  @IsString()
+  @IsNotEmpty()
+  nama?: string;
   @IsOptional()
   @IsIn(['LOLOS', 'TIDAK_LOLOS'])
   keputusan?: string;
@@ -18,6 +22,7 @@ export class SignInovasiDto {
 
   @IsString()
   @IsNotEmpty()
+  @Matches(/^\d+$/, { message: 'NIP hanya boleh berisi angka' })
   nip: string;
 
   @IsString()
