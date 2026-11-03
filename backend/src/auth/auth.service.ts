@@ -42,6 +42,7 @@ export class AuthService {
       data: {
         email: dto.email,
         password: hashedPassword,
+        no_hp: dto.no_hp,
         nama_lengkap: dto.nama_lengkap,
         role: dto.role,
         satker_id: dto.satker_id ?? null,

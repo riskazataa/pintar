@@ -260,7 +260,7 @@ export default function Tahap1Hasil({ tahap = 1 }: { tahap?: number }) {
         </button>
       </div>
 
-      <TableToolbar search={search} onSearchChange={(value) => { setSearch(value); setPage(1) }} searchPlaceholder="Cari inovasi / PIC..." sortOrder={sortOrder} onSortOrderChange={(value) => { setSortOrder(value); setPage(1) }}>
+      <TableToolbar search={search} onSearchChange={(value) => { setSearch(value); setPage(1) }} searchPlaceholder="Cari inovasi / PIC..." sortOrder={sortOrder} onSortOrderChange={(value) => { setSortOrder(value); setPage(1) }} onClearFilters={() => { setSearch(''); setStatusFilter(''); setSatkerFilter(''); setStartDate(''); setEndDate(''); setSortOrder('desc'); setPage(1) }}>
         <label className="block text-xs font-medium text-slate-500">Status
           <select value={statusFilter} onChange={(event) => { setStatusFilter(event.target.value); setPage(1) }} className="mt-1 h-9 w-full rounded-md border border-slate-200 bg-white px-2.5 text-sm text-slate-700 outline-none transition focus:border-violet-300 focus:ring-2 focus:ring-violet-100">
             <option value="">Semua Status</option>

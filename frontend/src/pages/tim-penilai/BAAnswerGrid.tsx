@@ -23,11 +23,16 @@ export default function BAAnswerGrid({ answers, columns, values, disabled, onCha
   onChange: (id: string, value: any) => void
   showRequiredErrors?: boolean
 }) {
-  const rows = answers.filter((a) => !a.question?.parent_id).flatMap((parent, index) => [
-    { answer: parent, no: `${index + 1}.` },
-    ...answers.filter((a) => a.question?.parent_id === parent.question_id)
-      .map((answer, childIndex) => ({ answer, no: parent.question?.is_header ? `${childIndex + 1}.` : `${String.fromCharCode(97 + childIndex)}.` })),
-  ])
+  const roots = answers.filter((answer) => !answer.question?.parent_id)
+  const rows: { answer: any; no: string }[] = []
+  let sectionNumber = 0
+  for (const parent of roots) {
+    if (parent.question?.is_header) sectionNumber = 0
+    else sectionNumber += 1
+    rows.push({ answer: parent, no: parent.question?.is_header ? '' : `${sectionNumber}.` })
+    answers.filter((answer) => answer.question?.parent_id === parent.question_id)
+      .forEach((answer, childIndex) => rows.push({ answer, no: parent.question?.is_header ? `${childIndex + 1}.` : `${sectionNumber}.${String.fromCharCode(97 + childIndex)}.` }))
+  }
   return <div className="min-w-full">
     <table className="w-full min-w-max text-left text-sm">
     <tbody>{rows.map(({ answer, no }) => answer.question?.question_title_override === CONCLUSION_MARKER ? <tr key={answer.id} className="border-t"><td colSpan={columns.length + 2} className="space-y-3 p-3"><p className="font-bold">{answer.question.pertanyaan}</p>{disabled || satkerMode ? <p className="whitespace-pre-wrap">{conclusionText(values[answer.id] ?? answer)}</p> : <><select aria-label="Kesimpulan penilaian akhir" className="w-full rounded-lg border p-2" value={(values[answer.id] ?? answer).custom_values?.__kesimpulan ?? ''} onChange={(event) => { const row = values[answer.id] ?? answer; onChange(String(answer.id), { ...row, custom_values: { ...row.custom_values, __kesimpulan: event.target.value } }) }}><option value="">Pilih kesimpulan</option>{CONCLUSION_OPTIONS.map((option) => <option key={option}>{option}</option>)}</select>{(values[answer.id] ?? answer).custom_values?.__kesimpulan === 'Lainnya' && <textarea aria-label="Catatan kesimpulan lainnya" placeholder="Isi catatan kesimpulan lainnya" className="w-full rounded-lg border p-2" rows={3} value={(values[answer.id] ?? answer).custom_values?.__kesimpulan_catatan ?? ''} onChange={(event) => { const row = values[answer.id] ?? answer; onChange(String(answer.id), { ...row, custom_values: { ...row.custom_values, __kesimpulan_catatan: event.target.value } }) }} />}</>}</td></tr> : answer.question?.is_header ? <><tr key={`section-${answer.id}`} className="border-t bg-slate-100"><td colSpan={columns.length + 2} className="px-3 py-3 font-bold text-slate-800">{answer.question.pertanyaan}</td></tr><tr key={`section-columns-${answer.id}`} className="bg-gray-50 text-xs font-semibold text-slate-700"><th className="p-3">No</th><th className="min-w-[280px] p-3">{answer.question.question_title_override || ''}</th>{columns.map((column, index) => <th key={column.key} className="min-w-[200px] p-3">{answer.question.column_titles?.[index] || ''}</th>)}</tr></> : <tr key={answer.id} className="border-t">
