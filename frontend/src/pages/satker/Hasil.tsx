@@ -230,7 +230,7 @@ export default function Hasil() {
     <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
       <div>
         <h2 className="text-lg font-semibold text-gray-800">Hasil Penilaian Inovasi</h2>
-        <p className="text-sm text-gray-500">Hasil Tahap 1 dan Tahap 2 ditampilkan bersama untuk setiap inovasi.</p>
+        <p className="text-sm text-gray-500">Hasil Seleksi Awal dan Penilaian Akhir ditampilkan bersama untuk setiap inovasi.</p>
       </div>
       <button onClick={fetchResults} className="inline-flex h-10 items-center justify-center gap-2 rounded-lg border border-gray-300 bg-white px-4 text-sm font-medium text-gray-700 shadow-sm hover:bg-gray-50">
         <svg aria-hidden="true" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>
@@ -238,7 +238,7 @@ export default function Hasil() {
       </button>
     </div>
 
-    <TableToolbar search={search} onSearchChange={(value) => { setSearch(value); setPage(1) }} searchPlaceholder="Cari judul inovasi..." sortOrder={sortOrder} onSortOrderChange={(value) => { setSortOrder(value); setPage(1) }}>
+    <TableToolbar search={search} onSearchChange={(value) => { setSearch(value); setPage(1) }} searchPlaceholder="Cari judul inovasi..." sortOrder={sortOrder} onSortOrderChange={(value) => { setSortOrder(value); setPage(1) }} onClearFilters={() => { setSearch(''); setStartDate(''); setEndDate(''); setSortOrder('desc'); setPage(1) }}>
       <label className="block text-xs font-medium text-slate-500">Dari tanggal
         <input type="date" value={startDate} onChange={(event) => { setStartDate(event.target.value); setPage(1) }} className="mt-1 h-9 w-full rounded-md border border-slate-200 bg-white px-2.5 text-sm text-slate-700 outline-none transition focus:border-violet-300 focus:ring-2 focus:ring-violet-100" />
       </label>
@@ -256,8 +256,8 @@ export default function Hasil() {
             <tr>
               <th className="border-b border-slate-200 px-4 py-3.5">Tanggal masuk</th>
               <th className="border-b border-slate-200 px-4 py-3.5">Judul inovasi</th>
-              <th className="border-b border-slate-200 px-4 py-3.5">Hasil Tahap 1</th>
-              <th className="border-b border-slate-200 px-4 py-3.5">Hasil Tahap 2</th>
+              <th className="border-b border-slate-200 px-4 py-3.5">Hasil Seleksi Awal</th>
+              <th className="border-b border-slate-200 px-4 py-3.5">Hasil Penilaian Akhir</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-100">

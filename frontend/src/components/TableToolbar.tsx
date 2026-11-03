@@ -8,6 +8,7 @@ interface TableToolbarProps {
   searchPlaceholder?: string
   sortOrder: TableSortOrder
   onSortOrderChange: (value: TableSortOrder) => void
+  onClearFilters?: () => void
   children?: ReactNode
 }
 
@@ -17,6 +18,7 @@ export default function TableToolbar({
   searchPlaceholder = 'Cari data...',
   sortOrder,
   onSortOrderChange,
+  onClearFilters,
   children,
 }: TableToolbarProps) {
   const [filtersOpen, setFiltersOpen] = useState(false)
@@ -66,6 +68,7 @@ export default function TableToolbar({
             </select>
           </label>
           {children}
+          {onClearFilters && <div className="flex items-end"><button type="button" onClick={onClearFilters} className="h-9 rounded-md border border-slate-200 bg-white px-3 text-sm font-medium text-slate-600 hover:border-violet-200 hover:bg-violet-50 hover:text-violet-700">Hapus filter</button></div>}
         </div>
       )}
     </section>
