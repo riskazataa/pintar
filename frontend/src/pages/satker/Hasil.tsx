@@ -1,3 +1,9 @@
+import { CONCLUSION_MARKER, conclusionText } from '../../utils/ba-conclusion'
+import { addFinalSignatures } from '../../utils/ba-excel-signatures'
+import FinalSignatureForm from '../../components/FinalSignatureForm'
+import { addBAExcelHeader, BA_TABLE_START_ROW } from '../../utils/ba-excel-header'
+import { buildBAExcelRows } from '../../utils/ba-excel-rows'
+import type { BAReportHeader } from '../../services/inovasi.service'
 import { useCallback, useEffect, useState } from 'react'
 import axios from 'axios'
 import ExcelJS from 'exceljs'
@@ -19,6 +25,7 @@ interface HasilUsulan {
   createdAt?: string
   hasil_penilaian_tahap1?: string | null
   hasil_penilaian_tahap2?: string | null
+  usulan_signatures?: { user_id: number | string; tahap: number }[]
 }
 
 interface PaginationMeta {
@@ -58,37 +65,27 @@ function downloadPdf(blob: Blob, fileName: string) {
   window.setTimeout(() => URL.revokeObjectURL(url), 1000)
 }
 
-async function exportToExcel(data: any, tahap: number, columns: BAColumn[], _questionTitle = 'Kriteria Penilaian') {
+async function exportToExcel(data: any, tahap: number, columns: BAColumn[], _questionTitle = 'Kriteria Penilaian', reportHeader?: BAReportHeader) {
   const workbook = new ExcelJS.Workbook()
   const worksheet = workbook.addWorksheet('Berita Acara')
   worksheet.columns = [{ width: 8 }, { width: 55 }, ...columns.map((column) => ({ width: column.type === 'checkbox' ? 16 : 32 }))]
   const columnCount = columns.length + 2
-  worksheet.mergeCells(1, 1, 1, columnCount)
-  worksheet.getCell(1, 1).value = tahap === 2 ? 'Berita Acara Penilaian Inovasi Tahap 2' : 'Form Seleksi Awal Penilaian Inovasi'
-  worksheet.getCell(1, 1).font = { name: 'Times New Roman', size: 14, bold: true }
-  worksheet.getCell(1, 1).alignment = { horizontal: 'center', vertical: 'middle' }
-  worksheet.getRow(1).height = 32
-  worksheet.getCell('A3').value = `Unit: ${data.satker?.nama_satker || '-'}`
-  worksheet.getCell('A4').value = `Inovasi: ${data.judul || '-'}`
-
+  await addBAExcelHeader(workbook, worksheet, columnCount, data, reportHeader)
   const answers = data.assessment_answers ?? []
-  const rows = answers
-    .filter((answer: any) => !answer.question?.parent_id)
-    .flatMap((parent: any, index: number) => [
-      { answer: parent, no: `${index + 1}`, child: false },
-      ...answers
-        .filter((answer: any) => answer.question?.parent_id === parent.question_id)
-        .map((answer: any, childIndex: number) => ({
-          answer,
-          no: parent.question?.is_header ? String(childIndex + 1) : `${index + 1}.${String.fromCharCode(97 + childIndex)}`,
-          child: true,
-        })),
-    ])
+  const rows = buildBAExcelRows(answers)
 
   let rowOffset = 0
   const emphasizedRows = new Set<number>()
+  const conclusionRows = new Set<number>()
   rows.forEach(({ answer, no, child }: any, index: number) => {
-    const rowNumber = index + 6 + rowOffset
+    const rowNumber = index + BA_TABLE_START_ROW + rowOffset
+    if (answer.question?.question_title_override === CONCLUSION_MARKER) {
+      worksheet.mergeCells(rowNumber, 1, rowNumber, columnCount);
+      worksheet.getCell(rowNumber, 1).value = answer.question.pertanyaan + '\n' + conclusionText(answer);
+      conclusionRows.add(rowNumber);
+      emphasizedRows.add(rowNumber);
+      return;
+    }
     if (answer.question?.is_header) {
       worksheet.mergeCells(rowNumber, 1, rowNumber, columnCount);
       const cell = worksheet.getCell(rowNumber, 1);
@@ -107,42 +104,45 @@ async function exportToExcel(data: any, tahap: number, columns: BAColumn[], _que
     })]
   })
 
-  for (let row = 6; row < 6 + rows.length + rowOffset; row++) {
+  for (let row = BA_TABLE_START_ROW; row < BA_TABLE_START_ROW + rows.length + rowOffset; row++) {
     worksheet.getRow(row).eachCell({ includeEmpty: true }, (cell) => {
       cell.font = { name: 'Times New Roman', size: 10, bold: emphasizedRows.has(row) }
       cell.alignment = { wrapText: true, vertical: 'middle' }
       cell.border = { top: { style: 'thin' }, bottom: { style: 'thin' }, left: { style: 'thin' }, right: { style: 'thin' } }
     })
-    worksheet.getRow(row).height = 36
+    worksheet.getRow(row).height = conclusionRows.has(row) ? 32 + Math.ceil(String(worksheet.getCell(row, 1).value ?? '').length / 90) * 16 : 36
   }
 
   // Sertakan blok tanda tangan dan gambar tanda tangan pada file Excel.
   const signatures = data.signatures ?? data.usulan_signatures ?? []
-  signatures.forEach((signature: any, index: number) => {
-    const column = index % 2 === 0 ? 2 : Math.max(4, columnCount)
-    const row = 8 + rows.length + Math.floor(index / 2) * 9
-    for (const [offset, value] of [
-      [0, signature.jabatan || signature.role || '-'],
-      [4, signature.nama || signature.user?.nama_lengkap || '-'],
-      [5, `NIP ${signature.nip || '-'}`],
-    ] as const) {
-      const cell = worksheet.getCell(row + offset, column)
-      cell.value = value
-      cell.font = { name: 'Times New Roman', size: 11, bold: offset === 0 }
-      cell.alignment = { horizontal: 'center', wrapText: true }
-    }
-    worksheet.getRow(row).height = 35
-    if (signature.ttd_image) {
-      const match = /^data:image\/(png|jpe?g|gif);base64,/i.exec(signature.ttd_image)
-      if (match) {
-        const extension = match[1].toLowerCase() === 'jpg' ? 'jpeg' : match[1].toLowerCase()
-        const image = workbook.addImage({ base64: signature.ttd_image, extension: extension as 'png' | 'jpeg' | 'gif' })
-        worksheet.addImage(image, { tl: { col: column - 1 + 0.1, row }, ext: { width: 140, height: 55 } })
+  if (tahap === 2) addFinalSignatures(workbook, worksheet, columnCount, BA_TABLE_START_ROW + 2 + rows.length + rowOffset, signatures, reportHeader?.dateText)
+  else {
+    signatures.forEach((signature: any, index: number) => {
+      const column = index % 2 === 0 ? 2 : Math.max(4, columnCount)
+      const row = BA_TABLE_START_ROW + 2 + rows.length + rowOffset + Math.floor(index / 2) * 9
+      for (const [offset, value] of [
+        [0, signature.jabatan || signature.role || '-'],
+        [4, signature.nama || signature.user?.nama_lengkap || '-'],
+        [5, `NIP ${signature.nip || '-'}`],
+      ] as const) {
+        const cell = worksheet.getCell(row + offset, column)
+        cell.value = value
+        cell.font = { name: 'Times New Roman', size: 11, bold: offset === 0 }
+        cell.alignment = { horizontal: 'center', wrapText: true }
       }
-    }
-  })
+      worksheet.getRow(row).height = 35
+      if (signature.ttd_image) {
+        const match = /^data:image\/(png|jpe?g|gif);base64,/i.exec(signature.ttd_image)
+        if (match) {
+          const extension = match[1].toLowerCase() === 'jpg' ? 'jpeg' : match[1].toLowerCase()
+          const image = workbook.addImage({ base64: signature.ttd_image, extension: extension as 'png' | 'jpeg' | 'gif' })
+          worksheet.addImage(image, { tl: { col: column - 1 + 0.1, row }, ext: { width: 140, height: 55 } })
+        }
+      }
+    })
 
-  worksheet.views = [{ state: 'frozen', ySplit: 5, xSplit: 2 }]
+  }
+  worksheet.views = [{ state: 'frozen', ySplit: BA_TABLE_START_ROW - 1, xSplit: 2 }]
   const buffer = await workbook.xlsx.writeBuffer()
   const suffix = tahap === 2 ? '_Tahap_2' : ''
   saveAs(
@@ -152,6 +152,10 @@ async function exportToExcel(data: any, tahap: number, columns: BAColumn[], _que
 }
 
 export default function Hasil() {
+  const [currentUserId] = useState(() => {
+    try { return String(JSON.parse(localStorage.getItem('user') || '{}').id ?? '') }
+    catch { return '' }
+  })
   const [data, setData] = useState<HasilUsulan[]>([])
   const [meta, setMeta] = useState<PaginationMeta>({ page: 1, limit: 10, total: 0, totalPages: 0 })
   const [page, setPage] = useState(1)
@@ -162,6 +166,7 @@ export default function Hasil() {
   const [sortOrder, setSortOrder] = useState<TableSortOrder>('desc')
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
+  const [signDetail, setSignDetail] = useState<any>(null)
   const [exportingId, setExportingId] = useState<string | number | null>(null)
 
   const fetchResults = useCallback(async () => {
@@ -209,11 +214,11 @@ export default function Hasil() {
     setExportingId(item.id)
     try {
       const [detailResponse, columnsResponse] = await Promise.all([
-        getUsulanDetail(item.id, tahap),
+        getUsulanDetail(item.id, tahap, 'evaluation'),
         getBAColumns(tahap),
       ])
       const detail = detailResponse.data?.data || detailResponse.data
-      await exportToExcel(detail, tahap, columnsResponse.data.columns, columnsResponse.data.questionTitle)
+      await exportToExcel(detail, tahap, columnsResponse.data.columns, columnsResponse.data.questionTitle, columnsResponse.data.reportHeader)
     } catch {
       setError('Gagal memuat detail, template, atau tanda tangan untuk export Excel.')
     } finally {
@@ -266,7 +271,28 @@ export default function Hasil() {
                   {([1, 2] as const).map((stage) => {
                     const result = stage === 1 ? item.hasil_penilaian_tahap1 : item.hasil_penilaian_tahap2
                     const isComplete = result === 'LOLOS' || result === 'TIDAK_LOLOS'
-                    return <td key={stage} className="min-w-[250px] border-b border-slate-100 px-4 py-4"><div className="flex flex-wrap items-center gap-2"><ResultBadge value={result} />{isComplete && <div className="inline-flex items-center gap-1 rounded-lg bg-slate-50 p-1"><button onClick={() => handleExportPdf(item, stage)} disabled={exportingId === item.id} title={`Unduh PDF Tahap ${stage}`} className="inline-flex h-8 items-center gap-1.5 rounded-md border border-rose-200 bg-white px-2.5 text-[11px] font-semibold text-rose-700 transition hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-50"><svg aria-hidden="true" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth={1.8} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M7 3.75h7l4 4v12.5A1.75 1.75 0 0 1 16.25 22h-8.5A1.75 1.75 0 0 1 6 20.25V5.5A1.75 1.75 0 0 1 7.75 3.75ZM14 4v4h4m-9 5h6m-6 3h4" /></svg>PDF</button><button onClick={() => handleExportExcel(item, stage)} disabled={exportingId === item.id} title={`Unduh Excel Tahap ${stage}`} className="inline-flex h-8 items-center gap-1.5 rounded-md border border-emerald-200 bg-white px-2.5 text-[11px] font-semibold text-emerald-700 transition hover:bg-emerald-50 disabled:cursor-not-allowed disabled:opacity-50"><svg aria-hidden="true" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth={1.8} viewBox="0 0 24 24"><rect x="3.5" y="3.5" width="17" height="17" rx="2" /><path strokeLinecap="round" d="M3.5 9h17M3.5 15h17M9 9v11m6-11v11" /></svg>Excel</button></div>}</div></td>
+                    return <td key={stage} className="min-w-[250px] border-b border-slate-100 px-4 py-4">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <ResultBadge value={result} />
+                        {stage === 2 && !item.usulan_signatures?.some((signature) => signature.tahap === 2 && String(signature.user_id) === currentUserId) && <button type="button" className="rounded-lg border border-teal-200 px-3 py-1.5 text-xs font-medium text-teal-700 hover:bg-teal-50" onClick={async () => { try { const response = await getUsulanDetail(item.id, 2, 'evaluation'); setSignDetail(response.data?.data ?? response.data) } catch { setError('Penilaian akhir belum tersedia.') } }}>Tanda tangan BA</button>}
+                        {isComplete && <details className="group relative">
+                          <summary aria-label={`Ekspor hasil Tahap ${stage}`} title={`Ekspor hasil Tahap ${stage}`} className="inline-flex h-8 w-9 cursor-pointer list-none items-center justify-center gap-0.5 rounded-md border border-slate-200 bg-white text-slate-700 transition hover:border-violet-200 hover:bg-violet-50 hover:text-violet-700 [&::-webkit-details-marker]:hidden">
+                            <svg aria-hidden="true" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth={1.8} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M12 15V3m0 12 4-4m-4 4-4-4M4 17v3h16v-3" /></svg>
+                            <svg aria-hidden="true" className="h-3 w-3 transition-transform group-open:rotate-180" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="m6 9 6 6 6-6" /></svg>
+                          </summary>
+                          <div role="menu" aria-label={`Format ekspor Tahap ${stage}`} className="absolute left-0 top-full z-30 mt-1 flex w-fit min-w-32 items-center gap-1 rounded-lg border border-slate-200 bg-white p-1 shadow-lg">
+                            <button role="menuitem" onClick={(event) => { event.currentTarget.closest('details')?.removeAttribute('open'); void handleExportPdf(item, stage) }} disabled={exportingId === item.id} className="flex h-9 w-full items-center gap-2 rounded-md px-2.5 text-left text-xs font-medium text-slate-700 hover:bg-rose-50 hover:text-rose-700 disabled:cursor-not-allowed disabled:opacity-50">
+                              <svg aria-hidden="true" className="h-3.5 w-3.5 text-rose-600" fill="none" stroke="currentColor" strokeWidth={1.8} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M7 3.75h7l4 4v12.5A1.75 1.75 0 0 1 16.25 22h-8.5A1.75 1.75 0 0 1 6 20.25V5.5A1.75 1.75 0 0 1 7.75 3.75ZM14 4v4h4m-9 5h6m-6 3h4" /></svg>
+                              PDF
+                            </button>
+                            <button role="menuitem" onClick={(event) => { event.currentTarget.closest('details')?.removeAttribute('open'); void handleExportExcel(item, stage) }} disabled={exportingId === item.id} className="flex h-9 w-full items-center gap-2 rounded-md px-2.5 text-left text-xs font-medium text-slate-700 hover:bg-emerald-50 hover:text-emerald-700 disabled:cursor-not-allowed disabled:opacity-50">
+                              <svg aria-hidden="true" className="h-3.5 w-3.5 text-emerald-600" fill="none" stroke="currentColor" strokeWidth={1.8} viewBox="0 0 24 24"><rect x="3.5" y="3.5" width="17" height="17" rx="2" /><path strokeLinecap="round" d="M3.5 9h17M3.5 15h17M9 9v11m6-11v11" /></svg>
+                              Excel
+                            </button>
+                          </div>
+                        </details>}
+                      </div>
+                    </td>
                   })}
                 </tr>)}
           </tbody>
@@ -274,5 +300,6 @@ export default function Hasil() {
       </div>
       {!loading && <TablePagination meta={meta} onPage={setPage} onLimitChange={(size) => { setLimit(size); setPage(1) }} />}
     </div>
+    {signDetail && <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-black/40 p-4"><section role="dialog" aria-modal="true" aria-label="Tanda tangan BA penilaian akhir" className="my-auto w-full max-w-2xl rounded-2xl bg-white p-6 shadow-xl"><div className="mb-5 flex items-start justify-between gap-4"><h2 className="font-semibold">{signDetail.judul}</h2><button type="button" aria-label="Tutup" onClick={() => setSignDetail(null)}>✕</button></div>{signDetail.signatures?.some((sig: any) => String(sig.user_id) === String(JSON.parse(localStorage.getItem('user') || '{}').id)) ? <p className="text-sm text-teal-700">Anda sudah menandatangani BA penilaian akhir ini.</p> : <FinalSignatureForm id={signDetail.id} satker={signDetail.satker} unitMode disabled={signDetail.requires_assessment_save} onSigned={async () => { setSignDetail(null); await fetchResults() }} />}</section></div>}
   </div>
 }

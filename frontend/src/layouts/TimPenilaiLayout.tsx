@@ -79,7 +79,7 @@ export default function TimPenilaiLayout() {
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [profileOpen, setProfileOpen] = useState(false)
   const [currentUser, setCurrentUser] = useState(getUser)
-  const [openGroups, setOpenGroups] = useState<Record<string, boolean>>({ 'Penilaian Tahap 1': true })
+  const [openGroups, setOpenGroups] = useState<Record<string, boolean>>({ Dashboard: true })
   const user = currentUser
 
   useEffect(() => {
@@ -101,11 +101,7 @@ export default function TimPenilaiLayout() {
   }, [])
 
   useEffect(() => {
-    const activeGroup = location.pathname.startsWith('/tim-penilai/tahap-2')
-      ? 'Penilaian Tahap 2'
-      : location.pathname.startsWith('/tim-penilai/tahap-1')
-        ? 'Penilaian Tahap 1'
-        : null
+    const activeGroup = location.pathname.startsWith('/tim-penilai/dashboard') ? 'Dashboard' : null
     if (activeGroup) setOpenGroups((groups) => ({ ...groups, [activeGroup]: true }))
   }, [location.pathname])
 

@@ -18,6 +18,11 @@ enum RegistrationStatus {
   REJECTED
 }
 
+enum AssessmentAnswerSource {
+  SATKER
+  PENILAI
+}
+
 model Satker {
   id          Int       @id @default(autoincrement())
   nama_satker String
@@ -104,13 +109,14 @@ model Inovasi {
 model AssessmentQuestion {
   tahap Int @default(1)
   id         Int                @id @default(autoincrement())
-  satker_locked Boolean @default(false)
+  satker_lock_mode String @default("NONE")
   pertanyaan String
   is_header Boolean @default(false)
   urutan Int @default(0)
   question_title_override String?
   column_titles Json?
   is_active  Boolean            @default(true)
+  tahap2_hidden Boolean @default(false)
   parent_id  Int?
   parent     AssessmentQuestion? @relation("SubQuestions", fields: [parent_id], references: [id], onDelete: Cascade)
   children   AssessmentQuestion[] @relation("SubQuestions")
@@ -120,6 +126,7 @@ model AssessmentQuestion {
 model AssessmentAnswer {
   custom_values Json?
   tahap Int @default(1)
+  source AssessmentAnswerSource @default(SATKER)
   id              Int                @id @default(autoincrement())
   inovasi_id      Int
   inovasi         Inovasi            @relation(fields: [inovasi_id], references: [id], onDelete: Cascade)
@@ -128,6 +135,8 @@ model AssessmentAnswer {
   jawaban_boolean Boolean
   catatan_string  String?
   link            String?
+
+  @@index([inovasi_id, tahap, source])
 }
 
 model AssessmentTemplatePackage {

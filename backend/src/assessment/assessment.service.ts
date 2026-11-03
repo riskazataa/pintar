@@ -31,10 +31,10 @@ export class AssessmentService {
   async findActiveQuestions(tahap = 1) {
     if (![1, 2].includes(tahap)) throw new BadRequestException("Tahap harus 1 atau 2");
     return this.prisma.assessmentQuestion.findMany({
-      where: { parent_id: null, is_active: true, tahap: tahap === 2 ? { in: [1, 2] } : 1 },
+      where: { parent_id: null, is_active: true, tahap: tahap === 2 ? { in: [1, 2] } : 1, ...(tahap === 2 ? { OR: [{ tahap: 2 }, { tahap: 1, tahap2_hidden: false }] } : {}) },
       include: {
         children: {
-          where: { is_active: true },
+          where: { is_active: true, ...(tahap === 2 ? { OR: [{ tahap: 2 }, { tahap: 1, tahap2_hidden: false }] } : {}) },
           orderBy: [{ urutan: 'asc' }, { id: 'asc' }],
         },
       },
@@ -49,6 +49,12 @@ export class AssessmentService {
   }
 
   async createQuestion(dto: CreateQuestionDto) {
+    if (dto.question_title_override === '__FINAL_CONCLUSION__') {
+      if (dto.tahap !== 2 || dto.parent_id || dto.is_header) throw new BadRequestException('Kesimpulan hanya tersedia sebagai baris Penilaian Akhir');
+      dto.satker_lock_mode = 'ROW';
+      const existing = await this.prisma.assessmentQuestion.findFirst({ where: { tahap: 2, is_active: true, question_title_override: '__FINAL_CONCLUSION__' } });
+      if (existing) throw new BadRequestException('Bagian kesimpulan sudah tersedia');
+    }
     if (dto.is_header && dto.parent_id) throw new BadRequestException("Header bagian harus menjadi baris utama");
     if (dto.parent_id) {
       const parent = await this.prisma.assessmentQuestion.findUnique({ where: { id: dto.parent_id } });
@@ -58,7 +64,7 @@ export class AssessmentService {
     return this.prisma.assessmentQuestion.create({
       data: {
         pertanyaan: dto.pertanyaan,
-        satker_locked: dto.satker_locked ?? false,
+        satker_lock_mode: dto.satker_lock_mode ?? 'NONE',
         is_header: dto.is_header ?? false,
         question_title_override: dto.question_title_override ?? null,
         column_titles: dto.column_titles ?? undefined,
@@ -88,7 +94,7 @@ export class AssessmentService {
     const startOrder = insertAfterOrder === null ? await this.nextOrder(stage, null) : insertAfterOrder + 1;
     return this.prisma.$transaction(async (tx) => {
       if (insertAfterOrder !== null) await tx.assessmentQuestion.updateMany({ where: { tahap: stage, parent_id: null, is_active: true, urutan: { gt: insertAfterOrder } }, data: { urutan: { increment: rows.length } } });
-      return Promise.all(rows.map((row, index) => tx.assessmentQuestion.create({ data: { pertanyaan: row.pertanyaan.trim(), tahap: stage, is_active: true, is_header: false, parent_id: null, urutan: startOrder + index } })));
+      return Promise.all(rows.map((row, index) => tx.assessmentQuestion.create({ data: { pertanyaan: row.pertanyaan.trim(), tahap: stage, is_active: true, is_header: false, satker_lock_mode: row.satker_lock_mode ?? 'NONE', parent_id: null, urutan: startOrder + index } })));
     });
   }
 
@@ -114,6 +120,12 @@ export class AssessmentService {
       throw new NotFoundException('Pertanyaan tidak ditemukan');
     }
 
+    if (existing.question_title_override === '__FINAL_CONCLUSION__') {
+      dto.question_title_override = '__FINAL_CONCLUSION__';
+      dto.satker_lock_mode = 'ROW';
+      dto.is_header = false;
+    }
+
     if (dto.is_header && existing.parent_id) throw new BadRequestException("Subbaris tidak dapat menjadi header bagian");
     if (dto.tahap !== undefined && dto.tahap !== existing.tahap) throw new BadRequestException("Tahap pertanyaan tidak dapat diubah");
     if (dto.parent_id !== undefined && dto.parent_id !== existing.parent_id) throw new BadRequestException("Induk pertanyaan tidak dapat diubah");
@@ -123,13 +135,19 @@ export class AssessmentService {
     });
   }
 
-  async removeQuestion(id: number) {
+  async removeQuestion(id: number, tahap = 1) {
     const existing = await this.prisma.assessmentQuestion.findUnique({
       where: { id },
       include: { children: { select: { id: true } } },
     });
     if (!existing) {
       throw new NotFoundException('Pertanyaan tidak ditemukan');
+    }
+
+    if (tahap === 2 && existing.tahap === 1) {
+      const ids = [id, ...existing.children.map((child) => child.id)];
+      await this.prisma.assessmentQuestion.updateMany({ where: { id: { in: ids } }, data: { tahap2_hidden: true } });
+      return { ...existing, tahap2_hidden: true };
     }
 
     const childIds = existing.children.map((c) => c.id);

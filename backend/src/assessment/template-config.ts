@@ -1,7 +1,7 @@
 import type { PrismaService } from '../prisma/prisma.service';
-import type { TemplateColumnDto } from './dto/template-columns.dto';
+import type { TemplateColumnDto, ReportHeaderDto } from './dto/template-columns.dto';
 
-type TemplateConfig = { columns: TemplateColumnDto[]; questionTitle?: string };
+type TemplateConfig = { columns: TemplateColumnDto[]; questionTitle?: string; reportHeader?: ReportHeaderDto };
 const defaultColumns: TemplateColumnDto[] = [
   { key: 'jawaban_boolean', title: 'Hasil', type: 'checkbox', required: false },
   { key: 'catatan_string', title: 'Catatan', type: 'textarea', required: false },
@@ -16,6 +16,7 @@ export async function loadTemplateConfig(db: Pick<PrismaService, 'assessmentTemp
   const source = await loadTemplateConfig(db, 1);
   const inheritedColumnKeys = source.columns.map((column) => column.key);
   return {
+    reportHeader: config?.reportHeader ?? source.reportHeader,
     questionTitle: source.questionTitle ?? config?.questionTitle,
     columns: [...source.columns, ...(config?.columns ?? []).filter((column) => !inheritedColumnKeys.includes(column.key))],
     inheritedColumnKeys,

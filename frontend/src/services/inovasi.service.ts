@@ -19,8 +19,10 @@ export const getUsulanList = (params?: {
   return api.get('/inovasi', { params: { ...query, start_date: startDate, end_date: endDate } })
 }
 
-// Fungsi getUsulanDetail cukup 1 ini saja
-export const getUsulanDetail = (id: string | number, tahap = 1) => api.get(`/inovasi/${id}`, { params: { tahap } })
+export type AssessmentAnswerView = 'self-assessment' | 'evaluation'
+
+export const getUsulanDetail = (id: string | number, tahap = 1, view?: AssessmentAnswerView) =>
+  api.get(`/inovasi/${id}`, { params: { tahap, ...(view ? { view } : {}) } })
 
 export const createUsulan = (data: any) => api.post('/inovasi', data)
 
@@ -32,7 +34,7 @@ export const deleteUsulan = (id: string) => api.delete(`/inovasi/${id}`)
 
 export const getAssessmentQuestions = (tahap = 1) => api.get('/assessment/questions', { params: { tahap } })
 
-export const createAssessmentQuestion = (data: { pertanyaan: string; satker_locked?: boolean; is_header?: boolean; question_title_override?: string; column_titles?: string[]; tahap?: number; parent_id?: string | number | null }) =>
+export const createAssessmentQuestion = (data: { pertanyaan: string; satker_lock_mode?: 'NONE' | 'RINCIAN' | 'ROW'; is_header?: boolean; question_title_override?: string; column_titles?: string[]; tahap?: number; parent_id?: string | number | null }) =>
   api.post('/assessment/questions', data)
 
 export const createAssessmentQuestions = (rows: { pertanyaan: string; tahap: number; section_header_id?: number | null }[]) =>
@@ -41,11 +43,11 @@ export const createAssessmentQuestions = (rows: { pertanyaan: string; tahap: num
 export const reorderAssessmentQuestions = (tahap: number, parent_id: number | null, ids: number[]) =>
   api.put('/assessment/questions/order', { tahap, parent_id, ids })
 
-export const updateAssessmentQuestion = (id: string | number, data: { pertanyaan: string; satker_locked?: boolean; is_header?: boolean; question_title_override?: string; column_titles?: string[]; tahap?: number; parent_id?: string | number | null }) =>
+export const updateAssessmentQuestion = (id: string | number, data: { pertanyaan: string; satker_lock_mode?: 'NONE' | 'RINCIAN' | 'ROW'; is_header?: boolean; question_title_override?: string; column_titles?: string[]; tahap?: number; parent_id?: string | number | null }) =>
   api.put(`/assessment/questions/${id}`, data)
 
-export const deleteAssessmentQuestion = (id: string) =>
-  api.delete(`/assessment/questions/${id}`)
+export const deleteAssessmentQuestion = (id: string, tahap = 1) =>
+  api.delete(`/assessment/questions/${id}`, { params: { tahap } })
 
   export const deleteAssessmentQuestions = (ids: number[]) =>
     api.delete('/assessment/questions', { data: { ids } })
@@ -92,7 +94,8 @@ export const simpanTandaTangan = async (id: string, data: {
   jabatan: string; 
   nip: string; 
   signature_data: string;
-  keputusan: 'LOLOS' | 'TIDAK_LOLOS';
+  nama?: string;
+  keputusan?: 'LOLOS' | 'TIDAK_LOLOS';
 }, tahap = 1) => api.patch(`/inovasi/${id}/sign`, data, { params: { tahap } }) // Ubah ke patch dan /sign
 
 export interface BAColumn {
@@ -103,5 +106,6 @@ export interface BAColumn {
   options?: string[]
   defaultValue?: string
 }
-export const getBAColumns = (tahap = 1) => api.get<{ columns: BAColumn[]; questionTitle?: string; inheritedColumnKeys?: string[] }>('/assessment/columns', { params: { tahap } })
-export const saveBAColumns = (tahap: number, columns: BAColumn[], questionTitle?: string) => api.put('/assessment/columns', { columns, questionTitle }, { params: { tahap } })
+export interface BAReportHeader { title?: string; dateText?: string; logo?: string }
+export const getBAColumns = (tahap = 1) => api.get<{ columns: BAColumn[]; questionTitle?: string; inheritedColumnKeys?: string[]; reportHeader?: BAReportHeader }>('/assessment/columns', { params: { tahap } })
+export const saveBAColumns = (tahap: number, columns: BAColumn[], questionTitle?: string, reportHeader?: BAReportHeader) => api.put('/assessment/columns', { columns, questionTitle, reportHeader }, { params: { tahap } })

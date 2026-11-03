@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import {
   ResponsiveContainer,
   PieChart, Pie, Cell, Tooltip, Legend,
@@ -7,6 +7,7 @@ import {
 } from 'recharts'
 import axios from 'axios'
 import { getStatsInovasi } from '../services/inovasi.service'
+import { normalizeKriteriaInovasi } from '../utils/kriteria-inovasi'
 
 // ─── Types ───────────────────────────────────────────
 interface StatItem {
@@ -56,52 +57,55 @@ const EMPTY_STATS: StatsData = {
   stageMonitorData: [],
 }
 
-const COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#14b8a6']
+const COLORS = [
+  '#007C7B', '#13AF9A', '#42AE78', '#0AB2B8', '#E5832B', '#C0B22B',
+  '#CCD92B', '#F1F4BD', '#BFBFBF', '#8B8A86', '#686765', '#C00000', '#C3EAE6',
+]
 
 const STATUS_COLORS: Record<string, string> = {
-  'APPROVED': '#3b82f6',    // Biru
-  'REJECTED': '#ef4444',    // Merah
-  'PERBAIKAN': '#9333ea',   // Ungu
-  'SEDANG_DIREVIEW': '#f59e0b', // Kuning
-  'LOLOS': '#10b981',       // Hijau
-  'TIDAK_LOLOS': '#ef4444'  // Merah
+  'APPROVED': '#0AB2B8',
+  'REJECTED': '#C00000',
+  'PERBAIKAN': '#C0B22B',
+  'SEDANG_DIREVIEW': '#E5832B',
+  'LOLOS': '#42AE78',
+  'TIDAK_LOLOS': '#C00000',
 }
 
 const CARD_CONFIG = [
   {
     key: 'totalUsulan' as const, label: 'Total Usulan',
-    valueColor: 'text-blue-600', bg: 'bg-blue-50', border: 'border-blue-100', iconBg: 'bg-blue-100', lineColor: 'bg-blue-600',
-    icon: <svg className="h-5 w-5 text-blue-600" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>,
+    color: '#007C7B', tint: '#E6F4F3',
+    icon: <svg className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>,
   },
   {
     key: 'sedangDireview' as const, label: 'Sedang Direview',
-    valueColor: 'text-amber-600', bg: 'bg-amber-50', border: 'border-amber-100', iconBg: 'bg-amber-100', lineColor: 'bg-amber-600',
-    icon: <svg className="h-5 w-5 text-amber-600" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M12 6v6l4 2m5-2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>,
+    color: '#E5832B', tint: '#FFF1E5',
+    icon: <svg className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M12 6v6l4 2m5-2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>,
   },
   {
     key: 'disetujui' as const, label: 'Menunggu Tanda Tangan',
-    valueColor: 'text-blue-600', bg: 'bg-blue-50', border: 'border-blue-100', iconBg: 'bg-blue-100', lineColor: 'bg-blue-600',
-    icon: <svg className="h-5 w-5 text-blue-600" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>,
+    color: '#0AB2B8', tint: '#E5F8F7',
+    icon: <svg className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>,
   },
   {
     key: 'ditolak' as const, label: 'Tidak Lolos',
-    valueColor: 'text-rose-600', bg: 'bg-rose-50', border: 'border-rose-100', iconBg: 'bg-rose-100', lineColor: 'bg-rose-600',
-    icon: <svg className="h-5 w-5 text-rose-600" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>,
+    color: '#C00000', tint: '#FBEAEA',
+    icon: <svg className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>,
   },
   {
     key: 'lolos' as const, label: 'Lolos',
-    valueColor: 'text-emerald-600', bg: 'bg-emerald-50', border: 'border-emerald-100', iconBg: 'bg-emerald-100', lineColor: 'bg-emerald-600',
-    icon: <svg className="h-5 w-5 text-emerald-600" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>,
+    color: '#42AE78', tint: '#E9F6EF',
+    icon: <svg className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>,
   },
   {
     key: 'perbaikan' as const, label: 'Perlu Perbaikan',
-    valueColor: 'text-purple-600', bg: 'bg-purple-50', border: 'border-purple-100', iconBg: 'bg-purple-100', lineColor: 'bg-purple-600',
-    icon: <svg className="h-5 w-5 text-purple-600" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" /></svg>,
+    color: '#B6A92B', tint: '#F8F5DC',
+    icon: <svg className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" /></svg>,
   },
 ]
 
 // === SMART NORMALIZER ===
-function normalizeStats(rawInput: any): StatsData {
+function normalizeStats(rawInput: any, selectedStage = 1): StatsData {
   const raw = rawInput?.data ? rawInput.data : (rawInput || {})
   const summary = raw.summary_cards || {}
 
@@ -117,10 +121,11 @@ function normalizeStats(rawInput: any): StatsData {
   })).filter((item: StatItem) => item.value > 0) : []
 
   const kriteriaMap = new Map<string, number>()
-  if (Array.isArray(raw.chart_kriteria)) {
-    raw.chart_kriteria.forEach((item: any) => {
+  const chartKriteria = selectedStage === 1 ? raw.chart_kriteria_seleksi_awal : raw.chart_kriteria
+  if (Array.isArray(chartKriteria)) {
+    chartKriteria.forEach((item: any) => {
       if (Array.isArray(item.kriteria_inovasi)) {
-        item.kriteria_inovasi.forEach((crit: string) => {
+        normalizeKriteriaInovasi(item.kriteria_inovasi).forEach((crit) => {
           kriteriaMap.set(crit, (kriteriaMap.get(crit) || 0) + Number(item.total || 0))
         })
       }
@@ -142,20 +147,20 @@ function normalizeStats(rawInput: any): StatsData {
     tidak_lolos: Number(item.tidak_lolos || 0),
   })) : []
 
-  const stage1 = stageMonitorData.find((item) => item.label === 'Tahap 1')
-  const sedangDireview = stage1?.sedang_direview ?? legacyPending
-  const disetujui = stage1?.menunggu_ttd ?? legacyApproved
-  const lolos = stage1?.lolos ?? Number(summary.total_lolos ?? raw.lolos ?? 0)
-  const ditolak = stage1?.tidak_lolos ?? legacyRejected
-  const perbaikan = stage1?.perbaikan ?? legacyPerbaikan
-  const stage1Statuses: StatItem[] = stage1 ? [
-    { label: 'Sedang Direview', value: stage1.sedang_direview },
-    { label: 'Menunggu Tanda Tangan', value: stage1.menunggu_ttd },
-    { label: 'Perlu Perbaikan', value: stage1.perbaikan },
-    { label: 'Lolos', value: stage1.lolos },
-    { label: 'Tidak Lolos', value: stage1.tidak_lolos },
+  const selectedStageData = stageMonitorData.find((item) => item.label === `Tahap ${selectedStage}`)
+  const sedangDireview = selectedStageData?.sedang_direview ?? legacyPending
+  const disetujui = selectedStageData?.menunggu_ttd ?? legacyApproved
+  const lolos = selectedStageData?.lolos ?? Number(summary.total_lolos ?? raw.lolos ?? 0)
+  const ditolak = selectedStageData?.tidak_lolos ?? legacyRejected
+  const perbaikan = Number(summary.total_perbaikan ?? legacyPerbaikan)
+  const selectedStageStatuses: StatItem[] = selectedStageData ? [
+    { label: 'Sedang Direview', value: selectedStageData.sedang_direview },
+    { label: 'Menunggu Tanda Tangan', value: selectedStageData.menunggu_ttd },
+    { label: 'Perlu Perbaikan', value: selectedStageData.perbaikan },
+    { label: 'Lolos', value: selectedStageData.lolos },
+    { label: 'Tidak Lolos', value: selectedStageData.tidak_lolos },
   ] : []
-  const statusData = (stage1Statuses.some((item) => item.value > 0) ? stage1Statuses : [
+  const statusData = (selectedStageData ? selectedStageStatuses : [
     { label: 'Sedang Direview', value: sedangDireview },
     { label: 'Menunggu Tanda Tangan', value: disetujui },
     { label: 'Lolos', value: lolos },
@@ -189,19 +194,19 @@ function getUser() {
 
 function SummaryCard({ config, value }: { config: typeof CARD_CONFIG[0]; value: number }) {
   return (
-    <div className={`group relative flex h-full min-h-[164px] flex-col overflow-hidden rounded-2xl border ${config.border} ${config.bg} p-6 shadow-sm transition-all duration-300 hover:shadow-lg hover:-translate-y-1`}>
+    <div className="group relative flex h-full min-h-[164px] flex-col overflow-hidden rounded-2xl border p-6 shadow-sm transition-all duration-300 hover:-translate-y-1 hover:shadow-lg" style={{ backgroundColor: config.tint, borderColor: `${config.color}30` }}>
       <div className="flex flex-1 items-start justify-between gap-2">
         <div className="flex flex-1 flex-col">
           <p className="min-h-10 text-sm font-medium text-gray-500">{config.label}</p>
-          <p className={`mt-2 text-3xl font-bold tracking-tight ${config.valueColor}`}>
+          <p className="mt-2 text-3xl font-bold tracking-tight" style={{ color: config.color }}>
             {value.toLocaleString('id-ID')}
           </p>
         </div>
-        <div className={`rounded-xl ${config.iconBg} p-3 shadow-sm`}>
+        <div className="rounded-xl p-3 shadow-sm" style={{ backgroundColor: `${config.color}20`, color: config.color }}>
           {config.icon}
         </div>
       </div>
-      <div className={`absolute bottom-0 left-0 right-0 h-1 rounded-b-2xl ${config.lineColor} opacity-30`} />
+      <div className="absolute bottom-0 left-0 right-0 h-1 rounded-b-2xl opacity-40" style={{ backgroundColor: config.color }} />
     </div>
   )
 }
@@ -222,14 +227,19 @@ function ChartCard({ title, action, children, className = '' }: { title: string;
 }
 
 export default function DashboardAnalytics() {
-  const [stats, setStats] = useState<StatsData>(EMPTY_STATS)
+  const [rawStats, setRawStats] = useState<any>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
+  const [selectedStage, setSelectedStage] = useState<1 | 2>(1)
   const user = getUser()
   const nama = user?.nama_lengkap || 'Pengguna'
+  const reviewerStageLabel = user?.role === 'REVIEWER' || user?.role === 'UNIT'
+    ? selectedStage === 1 ? 'Seleksi Awal' : 'Penilaian Akhir'
+    : null
 
   // State untuk filter waktu timeline (Week, Month, Year)
   const [timeFilter, setTimeFilter] = useState<'week' | 'month' | 'year'>('month')
+  const stats = useMemo(() => rawStats ? normalizeStats(rawStats, selectedStage) : EMPTY_STATS, [rawStats, selectedStage])
 
   // Refetch data jika timeFilter berubah (opsional, jika backend mu mendukung parameternya)
   useEffect(() => {
@@ -243,7 +253,7 @@ export default function DashboardAnalytics() {
       // Catatan: Jika backend mu bisa menerima query parameter period/filter,
       // kamu bisa menambahkannya di sini, contoh: getStatsInovasi({ period: timeFilter })
       const response = await getStatsInovasi()
-      setStats(normalizeStats(response.data))
+      setRawStats(response.data)
     } catch (err: unknown) {
       const msg = axios.isAxiosError(err) && err.response?.data?.message
         ? err.response.data.message
@@ -282,7 +292,7 @@ export default function DashboardAnalytics() {
     )
   }
 
-  const { statusData, jenisData, kriteriaData, timelineData, stageMonitorData } = stats
+  const { statusData, jenisData, kriteriaData, timelineData } = stats
 
   const labelToStatusKey = (label: string): string => {
     if (label === 'Sedang Direview') return 'SEDANG_DIREVIEW'
@@ -305,7 +315,7 @@ export default function DashboardAnalytics() {
             onClick={() => setTimeFilter(value)}
             className={`rounded-md px-3 py-1.5 text-xs font-medium transition-all ${
               timeFilter === value
-                ? 'bg-white text-blue-600 shadow-sm'
+                ? 'bg-white text-[#007C7B] shadow-sm'
                 : 'text-gray-500 hover:text-gray-700'
             }`}
           >
@@ -318,11 +328,17 @@ export default function DashboardAnalytics() {
 
   return (
     <div className="space-y-6 pb-10">
-      <div>
-        <h2 className="text-lg font-semibold text-gray-800">
-          Selamat datang, <span className="text-blue-600">{nama}</span>
-        </h2>
-        <p className="text-sm text-gray-500">Pusat monitoring dan visualisasi data usulan inovasi</p>
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <h2 className="text-lg font-semibold text-gray-800">
+            Selamat datang, <span className="text-[#007C7B]">{nama}</span>
+          </h2>
+          <p className="text-sm text-gray-500">{reviewerStageLabel ? `Dashboard pemantauan ${reviewerStageLabel}` : 'Pusat monitoring dan visualisasi data usulan inovasi'}</p>
+        </div>
+        {(user?.role === 'REVIEWER' || user?.role === 'UNIT') && <div role="tablist" aria-label="Tahap dashboard" className="inline-flex w-fit rounded-xl border border-gray-200 bg-white p-1 shadow-sm">
+          <button type="button" role="tab" aria-selected={selectedStage === 1} onClick={() => setSelectedStage(1)} className={`rounded-lg px-4 py-2 text-sm font-medium transition ${selectedStage === 1 ? 'bg-[#007C7B] text-white shadow-sm' : 'text-gray-600 hover:bg-gray-50'}`}>Seleksi Awal</button>
+          <button type="button" role="tab" aria-selected={selectedStage === 2} onClick={() => setSelectedStage(2)} className={`rounded-lg px-4 py-2 text-sm font-medium transition ${selectedStage === 2 ? 'bg-[#007C7B] text-white shadow-sm' : 'text-gray-600 hover:bg-gray-50'}`}>Penilaian Akhir</button>
+        </div>}
       </div>
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
@@ -332,7 +348,7 @@ export default function DashboardAnalytics() {
       </div>
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
-        <ChartCard title="Persentase Status Usulan">
+        <ChartCard title={reviewerStageLabel ? `Persentase Status ${reviewerStageLabel}` : 'Persentase Status Usulan'}>
           {statusData.length === 0 ? (
             <div className="flex h-72 items-center justify-center text-sm text-gray-400 border border-dashed rounded-lg">Data status belum tersedia</div>
           ) : (
@@ -386,27 +402,6 @@ export default function DashboardAnalytics() {
         </ChartCard>
       </div>
 
-      <ChartCard title="Pemantauan Status Penilaian per Tahap" className="min-w-0">
-        {stageMonitorData.length === 0 || !stageMonitorData.some((item) => item.sedang_direview + item.menunggu_ttd + item.perbaikan + item.lolos + item.tidak_lolos > 0) ? (
-          <div className="flex h-72 items-center justify-center rounded-lg border border-dashed text-sm text-gray-400">Data pemantauan tahap belum tersedia</div>
-        ) : (
-          <ResponsiveContainer width="100%" height={320}>
-            <BarChart data={stageMonitorData} margin={{ top: 8, right: 16, left: 0, bottom: 8 }}>
-              <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f3f4f6" />
-              <XAxis dataKey="label" tick={{ fontSize: 12 }} stroke="#6b7280" axisLine={false} tickLine={false} />
-              <YAxis allowDecimals={false} tick={{ fontSize: 12 }} stroke="#9ca3af" axisLine={false} tickLine={false} />
-              <Tooltip contentStyle={{ borderRadius: 12, border: '1px solid #e5e7eb', boxShadow: '0 10px 15px -3px rgba(0,0,0,0.1)' }} />
-              <Legend formatter={(value: string) => <span className="text-xs font-medium text-gray-600">{value}</span>} />
-              <Bar dataKey="sedang_direview" name="Sedang Direview" stackId="status" fill="#f59e0b" radius={[0, 0, 0, 0]} />
-              <Bar dataKey="menunggu_ttd" name="Menunggu Tanda Tangan" stackId="status" fill="#3b82f6" />
-              <Bar dataKey="perbaikan" name="Perlu Perbaikan" stackId="status" fill="#8b5cf6" />
-              <Bar dataKey="lolos" name="Lolos" stackId="status" fill="#10b981" />
-              <Bar dataKey="tidak_lolos" name="Tidak Lolos" stackId="status" fill="#ef4444" radius={[6, 6, 0, 0]} />
-            </BarChart>
-          </ResponsiveContainer>
-        )}
-      </ChartCard>
-
       <ChartCard title="Distribusi Kriteria Inovasi">
         {kriteriaData.length === 0 ? (
           <div className="flex h-72 items-center justify-center text-sm text-gray-400 border border-dashed rounded-lg">Belum ada usulan untuk dikelompokkan berdasarkan kriteria</div>
@@ -417,7 +412,7 @@ export default function DashboardAnalytics() {
               <XAxis type="number" tick={{ fontSize: 12 }} stroke="#9ca3af" />
               <YAxis type="category" dataKey="label" tick={{ fontSize: 11 }} stroke="#6b7280" width={140} />
               <Tooltip cursor={{ fill: '#f3f4f6' }} contentStyle={{ borderRadius: 12, border: 'none', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.1)' }} />
-              <Bar dataKey="value" name="Jumlah" fill="#8b5cf6" radius={[0, 6, 6, 0]} barSize={24}>
+              <Bar dataKey="value" name="Jumlah" fill="#007C7B" radius={[0, 6, 6, 0]} barSize={24}>
                 {kriteriaData.map((_entry, index) => (
                   <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
                 ))}
@@ -444,10 +439,10 @@ export default function DashboardAnalytics() {
                 type="monotone" 
                 dataKey="count" 
                 name="Jumlah Usulan" 
-                stroke="#3b82f6" /* Ubah kode warna hex ini jika ingin warna selain biru */
+                stroke="#007C7B"
                 strokeWidth={3} 
                 dot={false} /* Menghilangkan titik-titik pada garis biasa */
-                activeDot={{ r: 6, fill: '#fff', stroke: '#3b82f6', strokeWidth: 2 }} /* Membuat titik berlubang indah saat di-hover */
+                activeDot={{ r: 6, fill: '#fff', stroke: '#007C7B', strokeWidth: 2 }}
               />
             </LineChart>
           </ResponsiveContainer>

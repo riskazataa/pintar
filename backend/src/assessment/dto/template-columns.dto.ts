@@ -9,7 +9,16 @@ export class TemplateColumnDto {
   @IsOptional() @IsArray() @IsString({ each: true }) @MaxLength(120, { each: true }) options?: string[];
   @IsOptional() @IsString() @MaxLength(500) defaultValue?: string;
 }
+export class ReportHeaderDto {
+  @IsOptional() @IsString() @MaxLength(300) title?: string;
+  @IsOptional() @IsString() @MaxLength(200) dateText?: string;
+  @IsOptional() @IsString() @MaxLength(1400000)
+  @Matches(/^(data:image\/(png|jpeg);base64,[A-Za-z0-9+/=]+)?$/)
+  logo?: string;
+}
 export class TemplateColumnsDto {
+  @IsOptional() @ValidateNested() @Type(() => ReportHeaderDto)
+  reportHeader?: ReportHeaderDto;
   @IsOptional() @IsString() @MaxLength(120)
   questionTitle?: string;
   @IsArray() @ValidateNested({ each: true }) @Type(() => TemplateColumnDto)

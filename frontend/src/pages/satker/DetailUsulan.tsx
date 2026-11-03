@@ -7,6 +7,7 @@ import BAAnswerGrid from '../tim-penilai/BAAnswerGrid'
 import { getStatusPresentation } from '../../utils/inovasi-status'
 import { useNotifications } from '../../components/NotificationProvider'
 import { formatJenisInovasi } from '../../utils/jenis-inovasi'
+import { normalizeKriteriaInovasi } from '../../utils/kriteria-inovasi'
 
 function formatDate(dateStr?: string) {
   if (!dateStr) return '-'
@@ -124,7 +125,7 @@ export default function DetailUsulan() {
             <div>
               <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-2">Kriteria Inovasi</p>
               <div className="flex flex-wrap gap-1.5">
-                {data.kriteria_inovasi?.map((k: string, i: number) => (
+                {normalizeKriteriaInovasi(data.kriteria_inovasi).map((k: string, i: number) => (
                   <span key={i} className="rounded-md bg-blue-50 px-2 py-1 text-[11px] font-medium text-blue-700 border border-blue-100">{k}</span>
                 ))}
               </div>
@@ -152,6 +153,7 @@ export default function DetailUsulan() {
             {data.assessment_answers && data.assessment_answers.length > 0 ? (
               <div className="overflow-x-auto rounded-xl border border-gray-200 bg-white">
                 <BAAnswerGrid
+                  satkerMode
                   questionTitle={questionTitle}
                   answers={assessmentRows}
                   columns={columns}

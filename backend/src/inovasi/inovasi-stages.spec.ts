@@ -10,10 +10,11 @@ describe('Pemisahan penilaian per tahap', () => {
     db = {
       assessmentTemplatePackage: { findFirst: jest.fn().mockResolvedValue(null) },
       inovasi: { findUnique: jest.fn(), update: jest.fn() },
-      assessmentQuestion: { count: jest.fn().mockResolvedValue(1), findMany: jest.fn().mockResolvedValue([{ id: 20 }]) },
+      assessmentQuestion: { count: jest.fn().mockResolvedValue(1), findMany: jest.fn().mockImplementation(async ({ where }) => where?.is_header || where?.question_title_override ? [] : [{ id: 20 }]) },
       assessmentAnswer: { deleteMany: jest.fn(), createMany: jest.fn(), findMany: jest.fn().mockResolvedValue([]) },
       usulinSignature: { count: jest.fn().mockResolvedValue(0), findFirst: jest.fn().mockResolvedValue(null), create: jest.fn() },
-      user: { findUniqueOrThrow: jest.fn().mockResolvedValue({ nama_lengkap: 'Penilai' }) },
+      user: { findUniqueOrThrow: jest.fn().mockResolvedValue({ nama_lengkap: 'Penilai', role: 'REVIEWER' }) },
+      satker: { findMany: jest.fn().mockResolvedValue([]) },
       $queryRaw: jest.fn(),
       $transaction: jest.fn(async (callback) => callback(db)),
     };
@@ -30,7 +31,7 @@ describe('Pemisahan penilaian per tahap', () => {
   it('menyimpan tahap 2 tanpa menghapus jawaban tahap 1', async () => {
     db.inovasi.findUnique.mockResolvedValue({ status: 'SELESAI_EVALUASI', penilai: [], penilai_tahap2: [{ id: 10 }] });
     await service.updateAssessmentByPenilai(1, { answers }, user, 2);
-    expect(db.assessmentAnswer.deleteMany).toHaveBeenCalledWith({ where: { inovasi_id: 1, tahap: 2 } });
+    expect(db.assessmentAnswer.deleteMany).toHaveBeenCalledWith({ where: { inovasi_id: 1, tahap: 2, source: 'PENILAI' } });
     expect(db.assessmentAnswer.createMany).toHaveBeenCalledWith({ data: [expect.objectContaining({ inovasi_id: 1, question_id: 20, tahap: 2 })] });
   });
 
@@ -73,7 +74,7 @@ describe('Pemisahan penilaian per tahap', () => {
       expect.objectContaining({ question_id: 2, tahap: 2 }),
       expect.objectContaining({ question_id: 20, tahap: 2 }),
     ]) });
-    expect(db.assessmentAnswer.deleteMany).toHaveBeenCalledWith({ where: { inovasi_id: 1, tahap: 2 } });
+    expect(db.assessmentAnswer.deleteMany).toHaveBeenCalledWith({ where: { inovasi_id: 1, tahap: 2, source: 'PENILAI' } });
   });
 
   it('menampilkan hasil Tahap 1 dan pertanyaan tambahan yang belum disimpan', async () => {
@@ -88,10 +89,88 @@ describe('Pemisahan penilaian per tahap', () => {
     expect(detail).toMatchObject({ requires_assessment_save: true, signatures: [] });
   });
 
+  it('mengurutkan data ekspor mengikuti urutan template, bukan urutan record jawaban', async () => {
+    const answer = (id: number, urutan: number, pertanyaan: string, is_header = false) => ({
+      id,
+      tahap: 1,
+      source: 'SATKER',
+      question_id: id,
+      question: { id, tahap: 1, urutan, pertanyaan, is_header, parent_id: null },
+      jawaban_boolean: false,
+    });
+    db.inovasi.findUnique.mockResolvedValue({
+      status: 'PENDING',
+      penilai: [],
+      penilai_tahap2: [],
+      usulan_signatures: [],
+      assessment_answers: [
+        answer(30, 20, 'C. Kategori', true),
+        answer(31, 21, 'Modifikasi'),
+        answer(20, 8, 'B. Kriteria', true),
+        answer(21, 9, 'Kebaharuan'),
+        answer(10, 0, 'A. Jenis', true),
+        answer(11, 1, 'Kebijakan'),
+      ],
+    });
+
+    const detail = await service.findOne(1, 1, { role: 'UNIT' }, 'self-assessment');
+    expect(detail.assessment_answers.map((item) => item.question.pertanyaan)).toEqual([
+      'A. Jenis', 'Kebijakan', 'B. Kriteria', 'Kebaharuan', 'C. Kategori', 'Modifikasi',
+    ]);
+  });
+
+  it('hanya mempertahankan rincian pada baris terkunci dan menerima isian kolom penilaian Satker', async () => {
+    db.assessmentQuestion.findMany.mockResolvedValue([{ id: 20, pertanyaan: 'Kriteria tetap', is_header: false, satker_lock_mode: 'RINCIAN' }]);
+    db.assessmentAnswer.findMany.mockResolvedValue([{
+      question_id: 20,
+      jawaban_boolean: true,
+      catatan_string: 'Catatan lama',
+      link: 'https://lama.example',
+      custom_values: { __rincian: 'Rincian tersimpan', skor: 1 },
+    }]);
+    const submitted = [{
+      question_id: 20,
+      jawaban_boolean: false,
+      catatan_string: 'Catatan baru',
+      link: 'https://baru.example',
+      custom_values: { __rincian: 'Rincian diubah', skor: 5 },
+    }];
+
+    await (service as any).enforceSatkerLocks(submitted, 1);
+
+    expect(submitted[0]).toMatchObject({
+      jawaban_boolean: false,
+      catatan_string: 'Catatan baru',
+      link: 'https://baru.example',
+      custom_values: { __rincian: 'Rincian tersimpan', skor: 5 },
+    });
+  });
+
+  it('mempertahankan seluruh isian jika satu baris dikunci penuh', async () => {
+    db.assessmentQuestion.findMany.mockResolvedValue([{ id: 20, pertanyaan: 'Hasil seleksi', is_header: false, satker_lock_mode: 'ROW' }]);
+    db.assessmentAnswer.findMany.mockResolvedValue([{
+      question_id: 20,
+      jawaban_boolean: true,
+      catatan_string: 'Catatan lama',
+      link: 'https://lama.example',
+      custom_values: { __rincian: 'Hasil seleksi', skor: 1 },
+    }]);
+    const submitted = [{ question_id: 20, jawaban_boolean: false, catatan_string: 'diubah', link: 'https://baru.example', custom_values: { skor: 5 } }];
+
+    await (service as any).enforceSatkerLocks(submitted, 1);
+
+    expect(submitted[0]).toMatchObject({
+      jawaban_boolean: true,
+      catatan_string: 'Catatan lama',
+      link: 'https://lama.example',
+      custom_values: { __rincian: 'Hasil seleksi', skor: 1 },
+    });
+  });
+
   it('menunggu jawaban warisan dan tambahan tersimpan sebelum tanda tangan pertama', async () => {
     db.inovasi.findUnique.mockResolvedValue({ status: 'SELESAI_EVALUASI', penilai: [], penilai_tahap2: [{ id: 10 }], usulan_signatures: [] });
     db.assessmentAnswer.findMany.mockImplementation(async ({ where }) => where.tahap === 1 ? [{ question_id: 1 }] : [{ question_id: 20 }]);
-    const dto = { usulan_inovasi_id: 1, user_id: 10, jabatan: 'SKI', nip: '123', signature_data: 'data:image/png;base64,abc', keputusan: 'LOLOS' };
+    const dto = { usulan_inovasi_id: 1, user_id: 10, nama: 'Nama manual', jabatan: 'Dalnis Itjen', nip: '123', signature_data: 'data:image/png;base64,abc', keputusan: 'LOLOS' };
     await expect(service.sign(1, dto, user, 2)).rejects.toThrow('Simpan seluruh jawaban');
     expect(db.usulinSignature.create).not.toHaveBeenCalled();
     db.assessmentAnswer.findMany.mockImplementation(async ({ where }) => where.tahap === 1 ? [{ question_id: 1 }] : [{ question_id: 1 }, { question_id: 20 }]);
@@ -102,14 +181,14 @@ describe('Pemisahan penilaian per tahap', () => {
   it('memakai pertanyaan yang sudah ditandatangani saat template mendapat tambahan baru', async () => {
     db.inovasi.findUnique.mockResolvedValue({ status: 'SELESAI_EVALUASI', status_tahap2: 'PENDING', penilai: [], penilai_tahap2: [{ id: 10 }], usulan_signatures: [{ id: 2, tahap: 2 }], assessment_answers: [
       { id: 31, tahap: 1, question_id: 1, question: { id: 1, tahap: 1, pertanyaan: 'Awal', parent_id: null }, jawaban_boolean: true },
-      { id: 32, tahap: 2, question_id: 1, question: { id: 1, tahap: 1, pertanyaan: 'Awal', parent_id: null }, jawaban_boolean: true },
-      { id: 33, tahap: 2, question_id: 20, question: { id: 20, tahap: 2, pertanyaan: 'Tambahan yang dinilai', parent_id: null }, jawaban_boolean: true },
+      { id: 32, tahap: 2, source: 'PENILAI', question_id: 1, question: { id: 1, tahap: 1, pertanyaan: 'Awal', parent_id: null }, jawaban_boolean: true },
+      { id: 33, tahap: 2, source: 'PENILAI', question_id: 20, question: { id: 20, tahap: 2, pertanyaan: 'Tambahan yang dinilai', parent_id: null }, jawaban_boolean: true },
     ] });
     db.assessmentQuestion.findMany.mockResolvedValue([{ id: 99, tahap: 2, pertanyaan: 'Tambahan setelah tanda tangan', parent_id: null }]);
     const detail = await service.findOne(1, 2);
     expect(detail.assessment_answers.map((answer) => answer.question_id)).toEqual([1, 20]);
     expect(detail).toMatchObject({ requires_assessment_save: false });
-    await service.sign(1, { usulan_inovasi_id: 1, user_id: 10, jabatan: 'SKI', nip: '123', signature_data: 'data:image/png;base64,abc', keputusan: 'TIDAK_LOLOS' }, user, 2);
+    await service.sign(1, { usulan_inovasi_id: 1, user_id: 10, nama: 'Nama manual', jabatan: 'Dalnis Itjen', nip: '123', signature_data: 'data:image/png;base64,abc', keputusan: 'TIDAK_LOLOS' }, user, 2);
     expect(db.assessmentQuestion.findMany).not.toHaveBeenCalled();
     expect(db.usulinSignature.create).toHaveBeenCalled();
   });
