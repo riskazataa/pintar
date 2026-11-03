@@ -6,6 +6,7 @@ import { getStatusPresentation } from '../../utils/inovasi-status'
 import BAAnswerGrid from './BAAnswerGrid'
 import { useNotifications } from '../../components/NotificationProvider'
 import { formatJenisInovasi } from '../../utils/jenis-inovasi'
+import { normalizeKriteriaInovasi } from '../../utils/kriteria-inovasi'
 
 function formatDate(dateStr?: string) {
   if (!dateStr) return '-'
@@ -30,7 +31,7 @@ export default function Tahap1DetailUsulan({ backPath = '/tim-penilai/usulan' }:
   useEffect(() => {
     if (!id) return
     setLoading(true)
-    getUsulanDetail(id)
+    getUsulanDetail(id, 1, 'self-assessment')
       .then((res) => setData(res.data?.data || res.data))
       .catch(() => notify('Gagal memuat detail usulan.', 'error'))
       .finally(() => setLoading(false))
@@ -108,7 +109,7 @@ export default function Tahap1DetailUsulan({ backPath = '/tim-penilai/usulan' }:
             <div>
               <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-2">Kriteria Inovasi</p>
               <div className="flex flex-wrap gap-1.5">
-                {data.kriteria_inovasi?.map((k: string, i: number) => (
+                {normalizeKriteriaInovasi(data.kriteria_inovasi).map((k: string, i: number) => (
                   <span key={i} className="rounded-md bg-blue-50 px-2 py-1 text-[11px] font-medium text-blue-700 border border-blue-100">{k}</span>
                 ))}
               </div>

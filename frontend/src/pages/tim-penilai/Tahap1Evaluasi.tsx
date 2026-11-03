@@ -4,6 +4,7 @@ import axios from 'axios'
 import { getUsulanList } from '../../services/inovasi.service'
 import { getSatker } from '../../services/satker.service'
 import { getStatusPresentation } from '../../utils/inovasi-status'
+import { getReviewerStageName } from '../../utils/tahap-reviewer'
 import TablePagination from '../../components/TablePagination'
 import TableToolbar, { type TableSortOrder } from '../../components/TableToolbar'
 
@@ -100,7 +101,7 @@ export default function Tahap1Evaluasi({ tahap = 1 }: { tahap?: number }) {
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h2 className="text-lg font-semibold text-gray-800">Evaluasi Data Usulan</h2>
-          <p className="text-sm text-gray-500">Penilaian Tahap {tahap} — Usulan yang ditugaskan ke anda</p>
+          <p className="text-sm text-gray-500">{getReviewerStageName(tahap)} — Usulan yang ditugaskan ke anda</p>
         </div>
         <button onClick={fetchList} className="inline-flex items-center gap-2 rounded-lg border border-gray-300 bg-white px-4 py-2.5 text-sm font-medium text-gray-700 shadow-sm transition hover:bg-gray-50">
           <svg className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>

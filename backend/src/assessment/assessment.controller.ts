@@ -74,8 +74,8 @@ export class AssessmentController {
   @Delete('questions/:id')
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles('SUPER_ADMIN', 'REVIEWER')
-  async removeQuestion(@Param('id', ParseIntPipe) id: number) {
-    return this.assessmentService.removeQuestion(id);
+  async removeQuestion(@Param('id', ParseIntPipe) id: number, @Query('tahap', new DefaultValuePipe(1), ParseIntPipe) tahap: number) {
+    return this.assessmentService.removeQuestion(id, tahap);
   }
 
   @Delete('questions')

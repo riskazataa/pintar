@@ -1,3 +1,4 @@
+import FinalSignatureForm from '../../components/FinalSignatureForm';
 import BAAnswerGrid from './BAAnswerGrid';
 import { getBAColumns } from '../../services/inovasi.service';
 import type { BAColumn } from '../../services/inovasi.service';
@@ -15,6 +16,8 @@ import {
 import { getStatusPresentation } from '../../utils/inovasi-status';
 import { useNotifications } from '../../components/NotificationProvider';
 import { formatJenisInovasi } from '../../utils/jenis-inovasi';
+import { normalizeKriteriaInovasi } from '../../utils/kriteria-inovasi';
+import { getReviewerStageName } from '../../utils/tahap-reviewer';
 
 function getUser() {
   try {
@@ -136,6 +139,7 @@ export default function Tahap1DetailEvaluasi({ tahap = 1, onUpdated }: { tahap?:
 
   const handleSimpanTandaTangan = async () => {
     if (!id || !nipTtd.trim() || !jabatanTtd.trim() || !keputusan) { notify('Harap isi semua field.', 'warning'); return; }
+    if (!/^\d+$/.test(nipTtd)) { notify('NIP hanya boleh berisi angka.', 'warning'); return; }
     if (!sigPad.current || sigPad.current.isEmpty()) { notify('Harap buat tanda tangan.', 'warning'); return; }
 
     setSigning(true);
@@ -194,10 +198,10 @@ export default function Tahap1DetailEvaluasi({ tahap = 1, onUpdated }: { tahap?:
         try {
           const res = await downloadHasilEvaluasiPdf(id!, tahap);
           const url = URL.createObjectURL(res.data);
-          const link = document.createElement('a'); link.href = url; link.download = `BA_Tahap_2_${id}.pdf`; link.click();
+          const link = document.createElement('a'); link.href = url; link.download = `BA_Penilaian_Akhir_${id}.pdf`; link.click();
           setTimeout(() => URL.revokeObjectURL(url), 1000);
         } catch { notify('Gagal mengunduh BA.', 'error') }
-      }}>Unduh BA Tahap 2</button>}
+      }}>Unduh BA Penilaian Akhir</button>}
       {/* Header Info */}
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between rounded-2xl bg-white p-6 shadow-sm border border-gray-100 transition-all">
         <div className="flex items-center gap-4">
@@ -240,7 +244,7 @@ export default function Tahap1DetailEvaluasi({ tahap = 1, onUpdated }: { tahap?:
             <div>
               <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-2">Kriteria Inovasi</p>
               <div className="flex flex-wrap gap-2">
-                {data.kriteria_inovasi?.map((k: string, i: number) => (
+                {normalizeKriteriaInovasi(data.kriteria_inovasi).map((k: string, i: number) => (
                   <span key={i} className="rounded-md bg-blue-50 px-2.5 py-1 text-xs font-medium text-blue-700 border border-blue-100">
                     {k}
                   </span>
@@ -310,14 +314,14 @@ export default function Tahap1DetailEvaluasi({ tahap = 1, onUpdated }: { tahap?:
         <div className="space-y-6">
           <div className="rounded-2xl border border-gray-100 bg-white p-6 shadow-sm">
             <div className="flex items-center justify-between mb-4 border-b border-gray-100 pb-4">
-              <h3 className="text-lg font-bold text-gray-800">{tahap === 2 ? 'Penilaian Tahap 2' : 'Self Assessment'}</h3>
+              <h3 className="text-lg font-bold text-gray-800">{getReviewerStageName(tahap)}</h3>
               <span className="text-xs font-semibold text-gray-600 bg-gray-100 px-3 py-1.5 rounded-full">
                 Total {data.assessment_answers?.length || 0} Pertanyaan
               </span>
             </div>
 
             {tahap === 2 && <div className="mb-4 rounded-xl border border-indigo-100 bg-indigo-50/60 p-4 text-sm leading-6 text-indigo-800">
-              Pertanyaan dan jawaban dari hasil Tahap 1 dibawa otomatis ke penilaian ini. Pertanyaan tambahan Tahap 2 ditampilkan setelahnya.
+              Pertanyaan dan jawaban dari hasil Seleksi Awal dibawa otomatis ke penilaian ini. Pertanyaan tambahan Penilaian Akhir ditampilkan setelahnya.
               {data.requires_assessment_save && <span className="mt-1 block font-medium">Klik Edit Assessment, lengkapi penilaian, lalu simpan sebelum menandatangani.</span>}
             </div>}
             <div className="space-y-4">
@@ -444,6 +448,7 @@ export default function Tahap1DetailEvaluasi({ tahap = 1, onUpdated }: { tahap?:
           </div>
         )}
 
+        {tahap === 2 && data.signatures?.filter((signature: any) => !data.assigned_users?.some((reviewer: any) => String(reviewer.id) === String(signature.user_id))).map((signature: any) => <div key={signature.id} className="mt-4 rounded-xl border border-slate-200 p-4"><p className="text-sm font-semibold">{signature.jabatan}</p><img src={signature.ttd_image} alt="Tanda tangan satker" className="h-20 max-w-48 object-contain" /><p className="text-sm">{signature.nama}</p><p className="text-xs text-slate-500">NIP {signature.nip}</p></div>)}
         {/* Form Tambah Tanda Tangan (HANYA jika user login adalah penilai assigned && belum sign) */}
         {data.assigned_users?.some(
           (u: any) =>
@@ -451,7 +456,7 @@ export default function Tahap1DetailEvaluasi({ tahap = 1, onUpdated }: { tahap?:
         ) && !data.signatures?.some(
           (s: any) => String(s.user_id) === String(currentUser?.id)
         ) && (
-          <div className="mt-6 border-t border-gray-100 pt-6">
+          tahap === 2 ? <div className="mt-6 border-t border-gray-100 pt-6"><FinalSignatureForm id={id!} satker={data.satker} disabled={isEditing || changed || data.requires_assessment_save} onSigned={async () => { const res = await getUsulanDetail(id!, 2); const detail = res.data?.data ?? res.data; setData(detail); initLocalAnswers(detail.assessment_answers ?? []); onUpdated?.() }} /></div> : <div className="mt-6 border-t border-gray-100 pt-6">
             <div className="mb-5 flex items-start gap-3">
               <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-blue-50 text-blue-600">
                 <svg aria-hidden="true" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth={1.8} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="m4 20 4.5-1 9.8-9.8a2.1 2.1 0 0 0-3-3L5.5 16 4 20Zm9.8-12.8 3 3M13 20h7" /></svg>
@@ -486,9 +491,11 @@ export default function Tahap1DetailEvaluasi({ tahap = 1, onUpdated }: { tahap?:
                   aria-label="NIP penanda tangan"
                   placeholder="Masukkan NIP"
                   value={nipTtd}
-                  onChange={e => setNipTtd(e.target.value)}
+                  onChange={e => setNipTtd(e.target.value.replace(/\D/g, ''))}
                   inputMode="numeric"
+                  pattern="[0-9]*"
                   maxLength={30}
+                  required
                   className="mt-1.5 h-11 w-full rounded-xl border border-gray-300 bg-white px-3.5 text-sm font-normal text-gray-800 outline-none transition placeholder:text-gray-400 focus:border-blue-500 focus:ring-4 focus:ring-blue-50"
                 />
               </label>
