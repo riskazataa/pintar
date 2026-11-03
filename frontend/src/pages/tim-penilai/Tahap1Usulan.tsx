@@ -180,7 +180,7 @@ export default function Tahap1Usulan({ tahap = 1 }: { tahap?: number }) {
                       <td className="px-4 py-3.5 font-medium text-slate-800 sm:px-6">{item.judul || item.nama_inovasi}</td>
                       <td className="whitespace-nowrap px-4 py-3.5 text-gray-600 sm:px-6">{item.pic_nama || item.penanggung_jawab || '-'}</td>
                       <td className="whitespace-nowrap px-4 py-3.5 sm:px-6">
-                        {(() => { const status = getStatusPresentation(item, tahap); return <span className={`inline-flex rounded-full border px-2.5 py-1 text-xs font-semibold ${status.className}`}>{status.label}</span> })()}
+                        {(() => { const status = getStatusPresentation(item, tahap); const stageLabel = tahap === 1 ? 'Seleksi Awal' : 'Penilaian Akhir'; const label = status.label === 'Lolos' || status.label === 'Tidak Lolos' ? `${status.label} ${stageLabel}` : status.label; return <span className={`inline-flex rounded-full border px-2.5 py-1 text-xs font-semibold ${status.className}`}>{label}</span> })()}
                       </td>
                       <td className="whitespace-nowrap px-4 py-3.5 text-right sm:px-6">
                         <div className="inline-flex items-center gap-1.5">

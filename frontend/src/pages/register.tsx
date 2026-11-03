@@ -14,19 +14,24 @@ const roleOptions = [
   { value: 'UNIT', label: 'Unit' },
   { value: 'REVIEWER', label: 'Reviewer' },
 ]
+const phonePattern = /^(?:08\d{8,11}|\+628\d{7,10})$/
 
 export default function Register({ onSwitch, onRegistered }: { onSwitch: () => void; onRegistered: () => void }) {
   const [daftarSatker, setDaftarSatker] = useState<Unit[]>([])
   const [form, setForm] = useState({
     nama_lengkap: '',
     email: '',
+    no_hp: '',
     password: '',
+    confirm_password: '',
     role: '',
     satker_id: '',
   })
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
   const [showPassword, setShowPassword] = useState(false)
+  const [validationAttempted, setValidationAttempted] = useState(false)
+  const invalidClass = (invalid: boolean) => `mt-1 block w-full rounded-lg border px-4 py-2.5 text-sm text-gray-900 focus:ring-2 ${invalid ? 'border-red-500 focus:border-red-500 focus:ring-red-100' : 'border-gray-300 focus:border-blue-500 focus:ring-blue-200'}`
 
   useEffect(() => {
     getSatker()
@@ -47,10 +52,17 @@ export default function Register({ onSwitch, onRegistered }: { onSwitch: () => v
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault()
+    setValidationAttempted(true)
     setError('')
+    if (!form.nama_lengkap.trim() || !form.email.trim() || !form.no_hp || !form.password || !form.confirm_password || !form.role || (form.role === 'UNIT' && !form.satker_id)) {
+      setError('Lengkapi semua field yang wajib diisi.')
+      return
+    }
+    if (!phonePattern.test(form.no_hp)) { setError('Nomor HP harus diawali 08 atau +628, hanya berisi angka, dan maksimal 13 digit.'); return }
+    if (form.password !== form.confirm_password) { setError('Konfirmasi kata sandi tidak sama.'); return }
     setLoading(true)
     try {
-      const payload: { nama_lengkap: string; email: string; password: string; role: string; satker_id?: string | number } = { ...form }
+      const payload: { nama_lengkap: string; email: string; no_hp: string; password: string; role: string; satker_id?: string | number } = { nama_lengkap: form.nama_lengkap, email: form.email, no_hp: form.no_hp, password: form.password, role: form.role, satker_id: form.satker_id }
       
       // 3. PERBAIKAN: Sesuaikan pengecekan dengan huruf kapital
       if (payload.role !== 'UNIT') {
@@ -90,7 +102,7 @@ export default function Register({ onSwitch, onRegistered }: { onSwitch: () => v
             </div>
           )}
 
-          <form onSubmit={handleSubmit} className="grid grid-cols-1 gap-x-5 gap-y-3 sm:grid-cols-2">
+          <form noValidate onSubmit={handleSubmit} className="grid grid-cols-1 gap-x-5 gap-y-3 sm:grid-cols-2">
             <div>
               <label htmlFor="nama_lengkap" className="block text-sm font-medium text-gray-700">
                 Nama Lengkap
@@ -101,7 +113,8 @@ export default function Register({ onSwitch, onRegistered }: { onSwitch: () => v
                 required
                 value={form.nama_lengkap}
                 onChange={(e) => handleChange('nama_lengkap', e.target.value)}
-                className="mt-1 block w-full rounded-lg border border-gray-300 px-4 py-2 text-sm text-gray-900 placeholder-gray-400 focus:border-blue-500 focus:ring-2 focus:ring-blue-200"
+                aria-invalid={validationAttempted && !form.nama_lengkap.trim()}
+                className={invalidClass(validationAttempted && !form.nama_lengkap.trim()) + ' placeholder-gray-400'}
                 placeholder="Nama lengkap Anda"
               />
             </div>
@@ -116,9 +129,15 @@ export default function Register({ onSwitch, onRegistered }: { onSwitch: () => v
                 required
                 value={form.email}
                 onChange={(e) => handleChange('email', e.target.value)}
-                className="mt-1 block w-full rounded-lg border border-gray-300 px-4 py-2.5 text-sm text-gray-900 placeholder-gray-400 focus:border-blue-500 focus:ring-2 focus:ring-blue-200"
+                aria-invalid={validationAttempted && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email)}
+                className={invalidClass(validationAttempted && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email)) + ' placeholder-gray-400'}
                 placeholder="contoh@email.com"
               />
+            </div>
+
+            <div>
+              <label htmlFor="no_hp" className="block text-sm font-medium text-gray-700">Nomor HP</label>
+              <input id="no_hp" type="tel" required inputMode="tel" pattern="(?:08[0-9]{8,11}|\+628[0-9]{7,10})" maxLength={14} aria-invalid={validationAttempted && !phonePattern.test(form.no_hp)} value={form.no_hp} onChange={(e) => { const value = e.target.value.replace(/[^\d+]/g, '').replace(/(?!^)\+/g, '').slice(0, 14); handleChange('no_hp', value) }} className={invalidClass(validationAttempted && !phonePattern.test(form.no_hp))} placeholder="08xxxxxxxxxx atau +628xxxxxxxxxx" />
             </div>
 
             <div>
@@ -132,13 +151,19 @@ export default function Register({ onSwitch, onRegistered }: { onSwitch: () => v
                   required
                   value={form.password}
                   onChange={(e) => handleChange('password', e.target.value)}
-                  className="block w-full rounded-lg border border-gray-300 px-4 py-2.5 pr-12 text-sm text-gray-900 placeholder-gray-400 focus:border-blue-500 focus:ring-2 focus:ring-blue-200"
+                  aria-invalid={validationAttempted && form.password.length < 6}
+                  className={invalidClass(validationAttempted && form.password.length < 6) + ' pr-12 placeholder-gray-400'}
                   placeholder="Minimal 8 karakter"
                 />
                 <button type="button" aria-label={showPassword ? 'Sembunyikan kata sandi' : 'Tampilkan kata sandi'} onClick={() => setShowPassword(!showPassword)} className="absolute inset-y-0 right-0 flex w-11 items-center justify-center text-slate-400 hover:text-blue-600 focus-visible:outline-none focus-visible:text-blue-600">
                   <svg className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth={1.8} viewBox="0 0 24 24" aria-hidden="true">{showPassword ? <><path strokeLinecap="round" strokeLinejoin="round" d="M3 3l18 18M10.6 10.6a2 2 0 002.8 2.8"/><path strokeLinecap="round" strokeLinejoin="round" d="M9.9 5.2A10.8 10.8 0 0112 5c5 0 8.5 4.5 9.5 7a11.8 11.8 0 01-3.1 4.2M6.2 6.2A12.4 12.4 0 002.5 12c1 2.5 4.5 7 9.5 7 1.3 0 2.5-.3 3.6-.8"/></> : <><path strokeLinecap="round" strokeLinejoin="round" d="M2.5 12s3.5-7 9.5-7 9.5 7 9.5 7-3.5 7-9.5 7-9.5-7-9.5-7z"/><circle cx="12" cy="12" r="3"/></>}</svg>
                 </button>
               </div>
+            </div>
+
+            <div>
+              <label htmlFor="confirm_password" className="block text-sm font-medium text-gray-700">Konfirmasi Kata Sandi</label>
+              <input id="confirm_password" type="password" required value={form.confirm_password} onChange={(e) => handleChange('confirm_password', e.target.value)} aria-invalid={validationAttempted && (!form.confirm_password || form.confirm_password !== form.password)} className={invalidClass(validationAttempted && (!form.confirm_password || form.confirm_password !== form.password))} placeholder="Ulangi kata sandi" />
             </div>
 
             <div>
@@ -150,7 +175,8 @@ export default function Register({ onSwitch, onRegistered }: { onSwitch: () => v
                 required
                 value={form.role}
                 onChange={(e) => handleChange('role', e.target.value)}
-                className="mt-1 block w-full rounded-lg border border-gray-300 bg-white px-4 py-2.5 text-sm text-gray-900 focus:border-blue-500 focus:ring-2 focus:ring-blue-200"
+                aria-invalid={validationAttempted && !form.role}
+                className={`mt-1 block w-full rounded-lg border bg-white px-4 py-2.5 text-sm text-gray-900 focus:ring-2 ${validationAttempted && !form.role ? 'border-red-500 focus:border-red-500 focus:ring-red-100' : 'border-gray-300 focus:border-blue-500 focus:ring-blue-200'}`}
               >
                 {roleOptions.map((opt) => (
                   <option key={opt.value} value={opt.value}>
@@ -176,9 +202,10 @@ export default function Register({ onSwitch, onRegistered }: { onSwitch: () => v
                   <select
                     id="satker_id"
                     required={form.role === 'UNIT'}
+                    aria-invalid={validationAttempted && form.role === 'UNIT' && !form.satker_id}
                     value={form.satker_id}
                     onChange={(e) => handleChange('satker_id', e.target.value)}
-                    className="mt-1 block w-full rounded-lg border border-gray-300 bg-white px-4 py-2.5 text-sm text-gray-900 focus:border-blue-500 focus:ring-2 focus:ring-blue-200"
+                    className={`mt-1 block w-full rounded-lg border bg-white px-4 py-2.5 text-sm text-gray-900 focus:ring-2 ${validationAttempted && form.role === 'UNIT' && !form.satker_id ? 'border-red-500 focus:border-red-500 focus:ring-red-100' : 'border-gray-300 focus:border-blue-500 focus:ring-blue-200'}`}
                   >
                     <option value="">Pilih Unit</option>
                     {daftarSatker.map((s) => (
