@@ -38,6 +38,10 @@ export class CreateInovasiDto {
   @IsNotEmpty()
   judul: string;
 
+  @IsString()
+  @IsNotEmpty()
+  deskripsi_inovasi: string;
+
   @IsInt()
   @Min(2020)
   tahun: number;

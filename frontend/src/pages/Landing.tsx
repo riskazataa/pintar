@@ -13,6 +13,8 @@ function Icon({ kind = 'arrow', className = 'h-5 w-5' }: { kind?: string; classN
     pen: 'm15 5 4 4M4 20l4-1L20 7a2.8 2.8 0 0 0-4-4L4 15l-1 5h1Z',
     lock: 'M6 10h12v11H6V10Zm3 0V6a3 3 0 0 1 6 0v4',
     close: 'm6 6 12 12M6 18 18 6',
+    phone: 'M22 16.92v3a2 2 0 0 1-2.18 2 19.8 19.8 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2.12 4.2 2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.12.96.35 1.9.69 2.8a2 2 0 0 1-.45 2.11L8.08 9.92a16 16 0 0 0 6 6l1.29-1.27a2 2 0 0 1 2.11-.45c.9.34 1.84.57 2.8.69a2 2 0 0 1 1.72 2.03Z',
+    message: 'M21 11.5a8.4 8.4 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.4 8.4 0 0 1-3.8-.9L3 21l1.9-5.7a8.4 8.4 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.4 8.4 0 0 1 3.8-.9h.5a8.5 8.5 0 0 1 8 8v.5Z',
   }
   return <svg className={className} fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24" aria-hidden="true"><path d={paths[kind] || paths.arrow} /></svg>
 }
@@ -37,6 +39,7 @@ export default function Landing({ initialModal = null }: { initialModal?: Modal 
   const [modal, setModal] = useState<Modal>(initialModal)
   const [registered, setRegistered] = useState(false)
   const [preview, setPreview] = useState('Semua')
+  const [suggestion, setSuggestion] = useState('')
   const dialog = useRef<HTMLDivElement>(null)
   const navigate = useNavigate()
   useEffect(() => { setModal(initialModal) }, [initialModal])
@@ -66,7 +69,7 @@ export default function Landing({ initialModal = null }: { initialModal?: Modal 
     <header className="border-b border-slate-100 bg-white/95">
       <nav aria-label="Navigasi utama" className="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-5 px-5 py-5 sm:px-8">
         <a href="/" aria-label="SIAPIN — beranda" className="flex items-center gap-3"><img src="/siapin-logo.svg" alt="" className="h-11 w-11 drop-shadow-sm" /><span className="text-xl font-extrabold tracking-tight text-slate-900">SIAPIN<span className="block text-[10px] font-medium uppercase tracking-[.13em] text-slate-500">Sistem Informasi Aplikasi Penetapan Inovasi</span></span></a>
-        <div className="order-3 flex w-full justify-center gap-7 text-sm font-medium text-slate-500 md:order-none md:w-auto"><a className="hover:text-blue-600" href="#fitur">Fitur</a><a className="hover:text-blue-600" href="#alur">Cara kerja</a><a className="hover:text-blue-600" href="#faq">Tanya jawab</a></div>
+        <div className="order-3 flex w-full justify-center gap-7 text-sm font-medium text-slate-500 md:order-none md:w-auto"><a className="hover:text-blue-600" href="#fitur">Fitur</a><a className="hover:text-blue-600" href="#alur">Cara kerja</a><a className="hover:text-blue-600" href="#faq">Tanya jawab</a><a className="hover:text-blue-600" href="#informasi">Informasi</a></div>
         <div className="flex items-center gap-4"><button onClick={() => open('register')} className="text-sm font-semibold text-slate-600 hover:text-blue-600">Daftar</button><button onClick={() => open('login')} className={primary}>Masuk <Icon className="h-4 w-4" /></button></div>
       </nav>
     </header>
@@ -107,6 +110,43 @@ export default function Landing({ initialModal = null }: { initialModal?: Modal 
         ['Bagaimana hasil Lolos ditentukan?', 'Setiap penilai memberikan keputusan saat menandatangani. Setelah semua penilai menandatangani, suara mayoritas menentukan hasil. Jika suara seri, hasilnya Tidak Lolos.'],
         ['Di mana saya bisa mengunduh berita acara?', 'Unit dapat mengunduh PDF dan Excel bertanda tangan melalui Hasil Penilaian setelah penilaian selesai. Reviewer juga dapat mengunduhnya dari tahapan inovasi.'],
       ].map(([q, a]) => <details key={q} className="group py-5"><summary className="cursor-pointer text-sm font-semibold text-slate-800">{q}</summary><p className="mt-3 text-sm leading-7 text-slate-500">{a}</p></details>)}</div></section>
+      <section id="informasi" className="border-y border-slate-100 bg-white">
+        <div className="mx-auto max-w-7xl px-5 py-16 sm:px-8 sm:py-20">
+          <p className="text-xs font-bold uppercase tracking-[.18em] text-blue-600">Kami siap membantu</p>
+          <h2 className="mt-3 text-3xl font-bold tracking-tight">Informasi dan masukan</h2>
+          <div className="mt-8 grid gap-5 lg:grid-cols-2">
+            <article className="rounded-2xl border border-slate-200 bg-[#fbfcfe] p-6 sm:p-8">
+              <span className="inline-flex rounded-xl bg-blue-50 p-3 text-blue-600"><Icon kind="phone" /></span>
+              <h3 className="mt-5 text-lg font-semibold">Informasi Admin</h3>
+              <p className="mt-4 text-sm text-slate-500">Nama</p>
+              <p className="mt-1 font-semibold text-slate-800">Riska Zata Amani</p>
+              <p className="mt-4 text-sm text-slate-500">WhatsApp</p>
+              <a href="https://wa.me/6285285094427" target="_blank" rel="noreferrer" className="mt-1 inline-flex items-center gap-2 font-semibold text-blue-700 hover:text-blue-800">
+                0852 8509 4427 <Icon kind="arrow" className="h-4 w-4" />
+              </a>
+            </article>
+            <article className="rounded-2xl border border-slate-200 bg-[#fbfcfe] p-6 sm:p-8">
+              <span className="inline-flex rounded-xl bg-violet-50 p-3 text-violet-600"><Icon kind="message" /></span>
+              <h3 className="mt-5 text-lg font-semibold">Pertanyaan atau Saran</h3>
+              <p className="mt-2 text-sm leading-6 text-slate-500">Tuliskan masukan Anda. WhatsApp akan terbuka dengan pesan yang siap ditinjau dan dikirim.</p>
+              <form className="mt-5" onSubmit={(event) => {
+                event.preventDefault()
+                const message = suggestion.trim()
+                if (!message) return
+                const url = `https://wa.me/6285285094427?text=${encodeURIComponent(`Pertanyaan atau saran SIAPIN:\n${message}`)}`
+                window.open(url, '_blank', 'noopener,noreferrer')
+              }}>
+                <label htmlFor="landing-suggestion" className="sr-only">Pertanyaan atau saran</label>
+                <textarea id="landing-suggestion" required rows={4} maxLength={1000} value={suggestion} onChange={(event) => setSuggestion(event.target.value)} placeholder="Tulis pertanyaan atau saran Anda di sini..." className="w-full resize-y rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm outline-none transition placeholder:text-slate-400 focus:border-blue-400 focus:ring-4 focus:ring-blue-100" />
+                <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
+                  <span className="text-xs text-slate-400">{suggestion.length}/1000 karakter</span>
+                  <button type="submit" className="inline-flex items-center gap-2 rounded-full bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-blue-700">Kirim via WhatsApp <Icon className="h-4 w-4" /></button>
+                </div>
+              </form>
+            </article>
+          </div>
+        </div>
+      </section>
       <section className="mx-auto max-w-7xl px-5 pb-16 sm:px-8"><div className="flex flex-col items-start justify-between gap-6 rounded-3xl bg-slate-900 p-8 text-white sm:p-12 md:flex-row md:items-center"><div><h2 className="text-2xl font-semibold tracking-tight">Ruang untuk inovasi Anda berikutnya.</h2><p className="mt-3 text-sm text-slate-400">Mulai pengajuan dan ikuti perkembangannya dalam satu ruang kerja.</p></div><button onClick={() => open('register')} className="inline-flex shrink-0 items-center gap-3 rounded-full bg-white px-6 py-3 text-sm font-semibold text-slate-900 hover:bg-blue-50">Daftar sekarang <Icon className="h-4 w-4" /></button></div></section>
     </main>
       <footer className="border-t border-slate-100 px-5 py-7"><div className="mx-auto flex max-w-7xl flex-wrap justify-between gap-3 text-xs text-slate-400"><span className="font-semibold text-slate-600">SIAPIN · Sistem Informasi Aplikasi Penetapan Inovasi</span><span>Pengajuan, penilaian, dan dokumentasi inovasi.</span></div></footer>

@@ -63,6 +63,7 @@ enum StatusInovasi {
 model Inovasi {
   id                    Int                @id @default(autoincrement())
   judul                 String
+  deskripsi_inovasi    String?
   tahun                 Int
   jenis_inovasi         String
     jenis_inovasi_pilihan String[]           @default([])

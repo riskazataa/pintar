@@ -371,6 +371,7 @@ export class InovasiService {
     if (user.role === 'UNIT') await this.enforceSatkerLocks(assessment_answers ?? [], undefined);
     const inovasiData = {
       judul: dto.judul,
+      deskripsi_inovasi: dto.deskripsi_inovasi,
       tahun: dto.tahun,
       jenis_inovasi: dto.jenis_inovasi,
       jenis_inovasi_pilihan: dto.jenis_inovasi_pilihan?.length ? dto.jenis_inovasi_pilihan : [dto.jenis_inovasi],
@@ -438,6 +439,7 @@ export class InovasiService {
     await this.validateQuestionStage(assessment_answers ?? [], 1);
     const inovasiData: Record<string, any> = {};
     if (dto.judul !== undefined) inovasiData.judul = dto.judul;
+    if (dto.deskripsi_inovasi !== undefined) inovasiData.deskripsi_inovasi = dto.deskripsi_inovasi;
     if (dto.tahun !== undefined) inovasiData.tahun = dto.tahun;
     if (dto.jenis_inovasi !== undefined)
       inovasiData.jenis_inovasi = dto.jenis_inovasi;
@@ -719,6 +721,7 @@ export class InovasiService {
         ['Unit Utama', 'Ditjen Penanggulangan Penyakit'],
         ['Kantor Pusat / UPT', inovasi.satker?.nama_satker || '-'],
         ['Nama Inovasi', inovasi.judul || '-'],
+        ['Deskripsi Inovasi', inovasi.deskripsi_inovasi || '-'],
       ];
       for (const [label, value] of information) {
         doc.font('Times-Roman').fontSize(10);

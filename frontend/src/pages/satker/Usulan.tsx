@@ -54,6 +54,7 @@ interface AnswerEntry {
 
 interface FormErrors {
   namaInovasi?: string
+  deskripsiInovasi?: string
   tahun?: string
   jenisInovasi?: string
   linkDataDukung?: string
@@ -152,6 +153,7 @@ export default function Usulan() {
 
   const [step, setStep] = useState(1)
   const [namaInovasi, setNamaInovasi] = useState('')
+  const [deskripsiInovasi, setDeskripsiInovasi] = useState('')
   const [tahun, setTahun] = useState(new Date().getFullYear().toString())
   const [jenisInovasi, setJenisInovasi] = useState<string[]>([])
   const [jenisPickerOpen, setJenisPickerOpen] = useState(false)
@@ -234,7 +236,7 @@ export default function Usulan() {
   }
 
   const openCreate = () => {
-    setEditingId(null); setStep(1); setNamaInovasi(''); setTahun(new Date().getFullYear().toString()); setJenisInovasi([]); setJenisPickerOpen(false); setKriteria([]); setLinkDataDukung(''); setPenanggungJawab(''); setNoWhatsapp(''); setAnswers({}); setQuestions([]); setAssessmentColumns([]); setCatatanPerbaikan(''); setDetailUsulan(null); setFormErrors({}); setShowAssessmentErrors(false); setModalOpen(false)
+    setEditingId(null); setStep(1); setNamaInovasi(''); setDeskripsiInovasi(''); setTahun(new Date().getFullYear().toString()); setJenisInovasi([]); setJenisPickerOpen(false); setKriteria([]); setLinkDataDukung(''); setPenanggungJawab(''); setNoWhatsapp(''); setAnswers({}); setQuestions([]); setAssessmentColumns([]); setCatatanPerbaikan(''); setDetailUsulan(null); setFormErrors({}); setShowAssessmentErrors(false); setModalOpen(false)
     navigate('/satker/usulan/tambah')
   }
 
@@ -245,6 +247,7 @@ export default function Usulan() {
       const detail = res.data?.data || res.data
       setDetailUsulan(detail)
       setNamaInovasi(detail.judul || '')
+      setDeskripsiInovasi(detail.deskripsi_inovasi || '')
       setTahun(detail.tahun?.toString() || new Date().getFullYear().toString())
       const savedTypes = Array.isArray(detail.jenis_inovasi_pilihan) && detail.jenis_inovasi_pilihan.length
         ? detail.jenis_inovasi_pilihan.flatMap((type: string) => {
@@ -273,6 +276,7 @@ export default function Usulan() {
     if (step === 1) {
       const errors: FormErrors = {}
       if (!namaInovasi.trim()) errors.namaInovasi = 'Nama inovasi wajib diisi.'
+      if (!deskripsiInovasi.trim()) errors.deskripsiInovasi = 'Deskripsi singkat inovasi wajib diisi.'
       if (!tahun.trim()) errors.tahun = 'Tahun inovasi wajib diisi.'
       if (!jenisInovasi.length) errors.jenisInovasi = 'Pilih minimal satu jenis inovasi.'
       if (!linkDataDukung.trim()) errors.linkDataDukung = 'Link data dukung wajib diisi.'
@@ -301,7 +305,7 @@ export default function Usulan() {
     }))
     if (missingColumn) { setShowAssessmentErrors(true); notify('Kolom "' + missingColumn.title + '" wajib diisi pada pertanyaan yang masih kosong.', 'warning'); setSaving(false); return }
     const payload = {
-      judul: namaInovasi, tahun: parseInt(tahun, 10), jenis_inovasi: jenisInovasi[0], jenis_inovasi_pilihan: jenisInovasi, jenis_inovasi_lainnya: '', kriteria_inovasi: normalizeKriteriaInovasi(kriteria), link_data_dukung: linkDataDukung, pic_nama: penanggungJawab, pic_telp: noWhatsapp,
+      judul: namaInovasi, deskripsi_inovasi: deskripsiInovasi.trim(), tahun: parseInt(tahun, 10), jenis_inovasi: jenisInovasi[0], jenis_inovasi_pilihan: jenisInovasi, jenis_inovasi_lainnya: '', kriteria_inovasi: normalizeKriteriaInovasi(kriteria), link_data_dukung: linkDataDukung, pic_nama: penanggungJawab, pic_telp: noWhatsapp,
       assessment_answers: Object.values(answers).map((answer) => ({
         question_id: parseInt(answer.question_id, 10) || 0,
         jawaban_boolean: answer.jawaban_boolean,
@@ -489,6 +493,11 @@ export default function Usulan() {
                     <label className={`mb-1 block text-sm font-medium ${formErrors.namaInovasi ? 'text-red-600' : 'text-gray-700'}`}>Nama Inovasi <span className="text-red-500">*</span></label>
                     <input type="text" value={namaInovasi} onChange={(e) => { setNamaInovasi(e.target.value); setFormErrors((errors) => ({ ...errors, namaInovasi: undefined })) }} placeholder="Masukkan nama inovasi" aria-invalid={Boolean(formErrors.namaInovasi)} className={`w-full rounded-lg border px-4 py-2.5 text-sm outline-none focus:ring-2 ${formErrors.namaInovasi ? 'border-red-400 bg-red-50/40 focus:border-red-500 focus:ring-red-100' : 'border-gray-300 focus:border-blue-500 focus:ring-blue-200'}`} />
                     {formErrors.namaInovasi && <p className="mt-1 text-xs text-red-600">{formErrors.namaInovasi}</p>}
+                  </div>
+                  <div>
+                    <label htmlFor="deskripsi-inovasi" className={`mb-1 block text-sm font-medium ${formErrors.deskripsiInovasi ? 'text-red-600' : 'text-gray-700'}`}>Deskripsi Singkat Inovasi <span className="text-red-500">*</span></label>
+                    <textarea id="deskripsi-inovasi" required rows={3} maxLength={1000} value={deskripsiInovasi} onChange={(e) => { setDeskripsiInovasi(e.target.value); setFormErrors((errors) => ({ ...errors, deskripsiInovasi: undefined })) }} placeholder="Jelaskan inovasi, masalah yang diatasi, cara kerja, dan manfaatnya secara singkat." aria-invalid={Boolean(formErrors.deskripsiInovasi)} className={`w-full resize-y rounded-lg border px-4 py-2.5 text-sm outline-none focus:ring-2 ${formErrors.deskripsiInovasi ? 'border-red-400 bg-red-50/40 focus:border-red-500 focus:ring-red-100' : 'border-gray-300 focus:border-blue-500 focus:ring-blue-200'}`} />
+                    <div className="mt-1 flex justify-between text-xs"><span className={formErrors.deskripsiInovasi ? 'text-red-600' : 'text-gray-500'}>{formErrors.deskripsiInovasi || 'Ceritakan secara ringkas apa inovasinya dan manfaatnya.'}</span><span className="text-gray-400">{deskripsiInovasi.length}/1000</span></div>
                   </div>
                   <div>
                     <label className="mb-1 block text-sm font-medium text-gray-700">Nama Unit</label>

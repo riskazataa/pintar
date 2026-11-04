@@ -14,8 +14,22 @@ async function bootstrap() {
       transform: true,
     }),
   );
+  const configuredFrontendOrigin = new URL(
+    process.env.FRONTEND_URL || 'http://localhost:5173',
+  ).origin;
+  const isDevelopment = process.env.NODE_ENV !== 'production';
+
   app.enableCors({
-    origin: new URL(process.env.FRONTEND_URL || 'http://localhost:5173').origin,
+    origin: (origin, callback) => {
+      const isLocalDevelopmentOrigin =
+        isDevelopment &&
+        Boolean(origin && /^http:\/\/(localhost|127\.0\.0\.1):\d+$/.test(origin));
+
+      callback(
+        null,
+        !origin || origin === configuredFrontendOrigin || isLocalDevelopmentOrigin,
+      );
+    },
   });
 
   await app.listen(process.env.PORT ?? 3000);
