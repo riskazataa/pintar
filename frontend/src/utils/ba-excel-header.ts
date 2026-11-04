@@ -38,6 +38,7 @@ export async function addBAExcelHeader(workbook: ExcelJS.Workbook, sheet: ExcelJ
     ['Unit Utama', 'Ditjen Penanggulangan Penyakit'],
     ['Kantor Pusat / UPT', data.satker?.nama_satker || data.nama_satker || '-'],
     ['Nama Inovasi', data.judul || data.nama_inovasi || '-'],
+    ['Deskripsi Inovasi', data.deskripsi_inovasi || '-'],
   ]
   info.forEach(([label, value], index) => {
     const row = 10 + index
@@ -51,7 +52,7 @@ export async function addBAExcelHeader(workbook: ExcelJS.Workbook, sheet: ExcelJ
       cell.alignment = { vertical: 'middle', wrapText: true }
       cell.border = { top: { style: 'thin' }, bottom: { style: 'thin' }, left: { style: 'thin' }, right: { style: 'thin' } }
     }
-    sheet.getRow(row).height = index === 2 ? Math.max(32, Math.ceil(value.length / 65) * 15) : 20
+    sheet.getRow(row).height = index >= 2 ? Math.max(32, Math.ceil(String(value).length / 65) * 15) : 20
   })
   sheet.pageSetup = {
     orientation: 'landscape',
