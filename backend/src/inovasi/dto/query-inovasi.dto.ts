@@ -17,6 +17,12 @@ export class QueryInovasiDto {
   tahap?: number;
 
   @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(2020)
+  tahun?: number;
+
+  @IsOptional()
   @IsString()
   search?: string;
 

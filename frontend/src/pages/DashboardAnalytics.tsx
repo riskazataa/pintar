@@ -1,13 +1,14 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   ResponsiveContainer,
   PieChart, Pie, Cell, Tooltip, Legend,
   BarChart, Bar, XAxis, YAxis, CartesianGrid,
-  LineChart, Line // Menggunakan LineChart untuk menyesuaikan desain baru
+  ComposedChart, Line
 } from 'recharts'
 import axios from 'axios'
 import { getStatsInovasi } from '../services/inovasi.service'
 import { normalizeKriteriaInovasi } from '../utils/kriteria-inovasi'
+import YearSelect from '../components/YearSelect'
 
 // ─── Types ───────────────────────────────────────────
 interface StatItem {
@@ -18,6 +19,10 @@ interface StatItem {
 interface TimelineItem {
   date: string
   count: number
+  lolosSeleksiAwal: number
+  lolosPenilaianAkhir: number
+  persenSeleksiAwal: number
+  persenPenilaianAkhir: number
 }
 
 interface StageMonitorItem {
@@ -135,7 +140,11 @@ function normalizeStats(rawInput: any, selectedStage = 1): StatsData {
 
   const timelineData = Array.isArray(raw.chart_timeline) ? raw.chart_timeline.map((t: any) => ({
     date: t.bulan || t.date || 'Unknown',
-    count: Number(t.total || t.count || 0),
+    count: Number(t.total_usulan ?? t.total ?? t.count ?? 0),
+    lolosSeleksiAwal: Number(t.lolos_seleksi_awal || 0),
+    lolosPenilaianAkhir: Number(t.lolos_penilaian_akhir || 0),
+    persenSeleksiAwal: Number(t.persentase_seleksi_awal || 0),
+    persenPenilaianAkhir: Number(t.persentase_penilaian_akhir || 0),
   })) : []
 
   const stageMonitorData: StageMonitorItem[] = Array.isArray(raw.chart_tahap) ? raw.chart_tahap.map((item: any) => ({
@@ -231,6 +240,8 @@ export default function DashboardAnalytics() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [selectedStage, setSelectedStage] = useState<1 | 2>(1)
+  const [selectedYear, setSelectedYear] = useState(new Date().getFullYear())
+  const requestId = useRef(0)
   const user = getUser()
   const nama = user?.nama_lengkap || 'Pengguna'
   const reviewerStageLabel = user?.role === 'REVIEWER' || user?.role === 'UNIT'
@@ -241,28 +252,24 @@ export default function DashboardAnalytics() {
   const [timeFilter, setTimeFilter] = useState<'week' | 'month' | 'year'>('month')
   const stats = useMemo(() => rawStats ? normalizeStats(rawStats, selectedStage) : EMPTY_STATS, [rawStats, selectedStage])
 
-  // Refetch data jika timeFilter berubah (opsional, jika backend mu mendukung parameternya)
-  useEffect(() => {
-    fetchStats()
-  }, [timeFilter])
-
-  async function fetchStats() {
+  const fetchStats = useCallback(async () => {
+    const currentRequestId = ++requestId.current
     setLoading(true)
     setError('')
     try {
-      // Catatan: Jika backend mu bisa menerima query parameter period/filter,
-      // kamu bisa menambahkannya di sini, contoh: getStatsInovasi({ period: timeFilter })
-      const response = await getStatsInovasi()
-      setRawStats(response.data)
+      const response = await getStatsInovasi(selectedYear)
+      if (currentRequestId === requestId.current) setRawStats(response.data)
     } catch (err: unknown) {
       const msg = axios.isAxiosError(err) && err.response?.data?.message
         ? err.response.data.message
         : 'Gagal memuat data statistik.'
-      setError(msg)
+      if (currentRequestId === requestId.current) setError(msg)
     } finally {
-      setLoading(false)
+      if (currentRequestId === requestId.current) setLoading(false)
     }
-  }
+  }, [selectedYear])
+
+  useEffect(() => { void fetchStats() }, [fetchStats])
 
   if (loading) {
     return (
@@ -335,10 +342,13 @@ export default function DashboardAnalytics() {
           </h2>
           <p className="text-sm text-gray-500">{reviewerStageLabel ? `Dashboard pemantauan ${reviewerStageLabel}` : 'Pusat monitoring dan visualisasi data usulan inovasi'}</p>
         </div>
-        {(user?.role === 'REVIEWER' || user?.role === 'UNIT') && <div role="tablist" aria-label="Tahap dashboard" className="inline-flex w-fit rounded-xl border border-gray-200 bg-white p-1 shadow-sm">
-          <button type="button" role="tab" aria-selected={selectedStage === 1} onClick={() => setSelectedStage(1)} className={`rounded-lg px-4 py-2 text-sm font-medium transition ${selectedStage === 1 ? 'bg-[#007C7B] text-white shadow-sm' : 'text-gray-600 hover:bg-gray-50'}`}>Seleksi Awal</button>
-          <button type="button" role="tab" aria-selected={selectedStage === 2} onClick={() => setSelectedStage(2)} className={`rounded-lg px-4 py-2 text-sm font-medium transition ${selectedStage === 2 ? 'bg-[#007C7B] text-white shadow-sm' : 'text-gray-600 hover:bg-gray-50'}`}>Penilaian Akhir</button>
-        </div>}
+        <div className="flex flex-wrap items-end gap-3">
+          <YearSelect value={selectedYear} onChange={(year) => { setLoading(true); setRawStats(null); setSelectedYear(Number(year)) }} />
+          {(user?.role === 'REVIEWER' || user?.role === 'UNIT') && <div role="tablist" aria-label="Tahap dashboard" className="inline-flex w-fit rounded-xl border border-gray-200 bg-white p-1 shadow-sm">
+            <button type="button" role="tab" aria-selected={selectedStage === 1} onClick={() => setSelectedStage(1)} className={`rounded-lg px-4 py-2 text-sm font-medium transition ${selectedStage === 1 ? 'bg-[#007C7B] text-white shadow-sm' : 'text-gray-600 hover:bg-gray-50'}`}>Seleksi Awal</button>
+            <button type="button" role="tab" aria-selected={selectedStage === 2} onClick={() => setSelectedStage(2)} className={`rounded-lg px-4 py-2 text-sm font-medium transition ${selectedStage === 2 ? 'bg-[#007C7B] text-white shadow-sm' : 'text-gray-600 hover:bg-gray-50'}`}>Penilaian Akhir</button>
+          </div>}
+        </div>
       </div>
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
@@ -424,27 +434,29 @@ export default function DashboardAnalytics() {
 
       {/* Menambahkan UI Filter Waktu di properti action */}
       <ChartCard title="Tren Usulan" action={timeFilterUI}>
-        {timelineData.length === 0 ? (
+        {timelineData.length === 0 || stats.totalUsulan === 0 ? (
           <div className="flex h-64 items-center justify-center text-sm text-gray-400 border border-dashed rounded-lg">Data tren waktu belum tersedia</div>
         ) : (
           <ResponsiveContainer width="100%" height={300}>
-            <LineChart data={timelineData} margin={{ top: 10, right: 30, left: 0, bottom: 0 }}>
+            <ComposedChart data={timelineData} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
               <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f3f4f6" />
               <XAxis dataKey="date" tick={{ fontSize: 12 }} stroke="#9ca3af" tickMargin={10} axisLine={false} tickLine={false} />
-              <YAxis tick={{ fontSize: 12 }} stroke="#9ca3af" axisLine={false} tickLine={false} />
-              <Tooltip 
-                contentStyle={{ borderRadius: 12, border: '1px solid #e5e7eb', boxShadow: '0 10px 15px -3px rgba(0,0,0,0.1)' }} 
+              <YAxis yAxisId="jumlah" tick={{ fontSize: 12 }} stroke="#9ca3af" axisLine={false} tickLine={false} allowDecimals={false} />
+              <YAxis yAxisId="persentase" orientation="right" domain={[0, 100]} tick={{ fontSize: 12 }} stroke="#9ca3af" axisLine={false} tickLine={false} tickFormatter={(value: number) => `${value}%`} />
+              <Tooltip
+                formatter={(value, name) => [
+                  String(name).startsWith('%') ? `${Number(value).toFixed(1)}%` : Number(value).toLocaleString('id-ID'),
+                  name,
+                ]}
+                contentStyle={{ borderRadius: 12, border: '1px solid #e5e7eb', boxShadow: '0 10px 15px -1px rgba(0,0,0,0.1)' }}
               />
-              <Line 
-                type="monotone" 
-                dataKey="count" 
-                name="Jumlah Usulan" 
-                stroke="#007C7B"
-                strokeWidth={3} 
-                dot={false} /* Menghilangkan titik-titik pada garis biasa */
-                activeDot={{ r: 6, fill: '#fff', stroke: '#007C7B', strokeWidth: 2 }}
-              />
-            </LineChart>
+              <Legend formatter={(value: string) => <span className="text-xs font-medium text-gray-700">{value}</span>} />
+              <Line type="monotone" yAxisId="jumlah" dataKey="count" name="Usulan Satker" stroke="#007C7B" strokeWidth={3} dot={false} activeDot={{ r: 5 }} />
+              <Line type="monotone" yAxisId="jumlah" dataKey="lolosSeleksiAwal" name="Lolos Seleksi Awal" stroke="#E5832B" strokeWidth={2} dot={false} activeDot={{ r: 5 }} />
+              <Line type="monotone" yAxisId="jumlah" dataKey="lolosPenilaianAkhir" name="Lolos Penilaian Akhir" stroke="#42AE78" strokeWidth={2} dot={false} activeDot={{ r: 5 }} />
+              <Line type="monotone" yAxisId="persentase" dataKey="persenSeleksiAwal" name="% Lolos Seleksi Awal" stroke="#C00000" strokeWidth={2} strokeDasharray="5 4" dot={false} activeDot={{ r: 5 }} />
+              <Line type="monotone" yAxisId="persentase" dataKey="persenPenilaianAkhir" name="% Lolos Penilaian Akhir" stroke="#6950A1" strokeWidth={2} strokeDasharray="5 4" dot={false} activeDot={{ r: 5 }} />
+            </ComposedChart>
           </ResponsiveContainer>
         )}
       </ChartCard>

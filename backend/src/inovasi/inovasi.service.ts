@@ -49,10 +49,11 @@ export class InovasiService {
     const page = query.page ?? 1;
     const limit = query.limit ?? 10;
     const sortOrder = query.sort_order ?? 'desc';
-    const { search, satker_id, status, start_date, end_date, assignedToMe } =
+    const { search, satker_id, status, start_date, end_date, assignedToMe, tahun } =
       query;
 
     const where: Prisma.InovasiWhereInput = {};
+    if (tahun) where.tahun = tahun;
 
     if (user.role === 'UNIT' && user.satker_id) {
       where.satker_id = user.satker_id;
@@ -380,6 +381,9 @@ export class InovasiService {
       link_data_dukung: dto.link_data_dukung,
       pic_nama: dto.pic_nama,
       pic_telp: dto.pic_telp,
+      pic_penanggung_jawab: (dto.pic_penanggung_jawab?.length
+        ? dto.pic_penanggung_jawab.map(({ nama, no_whatsapp }) => ({ nama, no_whatsapp }))
+        : [{ nama: dto.pic_nama, no_whatsapp: dto.pic_telp }]) as Prisma.InputJsonArray,
     };
 
     return this.prisma.$transaction(async (tx) => {
@@ -453,6 +457,8 @@ export class InovasiService {
       inovasiData.link_data_dukung = dto.link_data_dukung;
     if (dto.pic_nama !== undefined) inovasiData.pic_nama = dto.pic_nama;
     if (dto.pic_telp !== undefined) inovasiData.pic_telp = dto.pic_telp;
+    if (dto.pic_penanggung_jawab !== undefined)
+      inovasiData.pic_penanggung_jawab = dto.pic_penanggung_jawab;
 
     inovasiData.status = StatusInovasi.PENDING;
     inovasiData.catatan_perbaikan = null;
@@ -1030,11 +1036,11 @@ export class InovasiService {
     sub: number;
     role: string;
     satker_id?: number | null;
-  }) {
+  }, tahun = new Date().getFullYear()) {
     const shouldFilterBySatker = user.role === 'UNIT' && !!user.satker_id;
     const where: Prisma.InovasiWhereInput = shouldFilterBySatker
-      ? { satker_id: user.satker_id! }
-      : {};
+      ? { satker_id: user.satker_id!, tahun }
+      : { tahun };
 
     const [
       total_usulan,
@@ -1044,7 +1050,6 @@ export class InovasiService {
       total_selesai_evaluasi,
       chartStatus,
       chartKriteria,
-      chartTimeline,
       chartTahapRows,
       baQuestions,
       baSatkerAnswers,
@@ -1067,16 +1072,10 @@ export class InovasiService {
         _count: { id: true },
         orderBy: { kriteria_inovasi: 'asc' },
       }),
-      this.prisma.$queryRawUnsafe<Array<{ bulan: string; total: bigint }>>(
-        `SELECT TO_CHAR(created_at, 'YYYY-MM') AS bulan, COUNT(*)::int8 AS total
-         FROM "Inovasi"
-         ${shouldFilterBySatker ? `WHERE satker_id = ${user.satker_id}` : ''}
-         GROUP BY bulan
-         ORDER BY bulan ASC`,
-      ),
       this.prisma.inovasi.findMany({
         where,
         select: {
+          created_at: true,
           status: true,
           status_tahap2: true,
           penilai: { select: { id: true } },
@@ -1109,9 +1108,37 @@ export class InovasiService {
       { label: 'Tahap 2', sedang_direview: 0, menunggu_ttd: 0, perbaikan: 0, lolos: 0, tidak_lolos: 0 },
     ];
     let totalPerbaikanUnik = 0;
+    const timelineByMonth = new Map<string, {
+      bulan: string;
+      total_usulan: number;
+      lolos_seleksi_awal: number;
+      lolos_penilaian_akhir: number;
+    }>();
+    for (let month = 1; month <= 12; month++) {
+      const key = `${tahun}-${String(month).padStart(2, '0')}`;
+      timelineByMonth.set(key, {
+        bulan: key,
+        total_usulan: 0,
+        lolos_seleksi_awal: 0,
+        lolos_penilaian_akhir: 0,
+      });
+    }
+
     for (const item of chartTahapRows) {
+      const monthKey = item.created_at.toISOString().slice(0, 7);
+      const monthStats = timelineByMonth.get(monthKey);
+      if (monthStats) {
+        monthStats.total_usulan++;
+        if (statusPenilaian(item.status, item.penilai, item.usulan_signatures, 1) === 'LOLOS') {
+          monthStats.lolos_seleksi_awal++;
+        }
+      }
+
       const tahap2Aktif = item.status === StatusInovasi.SELESAI_EVALUASI &&
         (item.penilai_tahap2.length > 0 || item.usulan_signatures.some((signature) => signature.tahap === 2));
+      if (tahap2Aktif && monthStats && statusPenilaian(item.status_tahap2, item.penilai_tahap2, item.usulan_signatures, 2) === 'LOLOS') {
+        monthStats.lolos_penilaian_akhir++;
+      }
       const stageInputs = [
         { tahap: 1, status: item.status, penilai: item.penilai, active: true },
         {
@@ -1156,9 +1183,14 @@ export class InovasiService {
         total: item._count.id,
       })),
       chart_kriteria_seleksi_awal: baCriteriaStats(baQuestions, baSatkerAnswers, baConfig.columns.find((column) => column.type === 'checkbox')?.key),
-      chart_timeline: chartTimeline.map((item) => ({
-        bulan: item.bulan,
-        total: Number(item.total),
+      chart_timeline: Array.from(timelineByMonth.values()).map((item) => ({
+        ...item,
+        persentase_seleksi_awal: item.total_usulan
+          ? Math.round((item.lolos_seleksi_awal / item.total_usulan) * 1000) / 10
+          : 0,
+        persentase_penilaian_akhir: item.total_usulan
+          ? Math.round((item.lolos_penilaian_akhir / item.total_usulan) * 1000) / 10
+          : 0,
       })),
       chart_tahap: chartTahap,
     };

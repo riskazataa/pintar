@@ -6,6 +6,7 @@ import { getSatker } from '../../services/satker.service'
 import { getStatusPresentation } from '../../utils/inovasi-status'
 import TablePagination from '../../components/TablePagination'
 import TableToolbar, { type TableSortOrder } from '../../components/TableToolbar'
+import YearSelect from '../../components/YearSelect'
 
 // ─── Types ───────────────────────────────────────────
 interface UsulanItem {
@@ -67,13 +68,20 @@ export default function Tahap1Usulan({ tahap = 1 }: { tahap?: number }) {
   const [satkerOptions, setSatkerOptions] = useState<SatkerOption[]>([])
   const [page, setPage] = useState(1)
   const [sortOrder, setSortOrder] = useState<TableSortOrder>('desc')
+  const [selectedYear, setSelectedYear] = useState('')
 
   const fetchList = useCallback(async () => {
+    if (!selectedYear) {
+      setData([])
+      setMeta({ page: 1, limit, total: 0, totalPages: 0 })
+      setLoading(false)
+      return
+    }
     setLoading(true)
     setError('')
     try {
       const res = await getUsulanList({
-        tahap, page, limit, search: search || undefined,
+        tahap, page, limit, tahun: Number(selectedYear), search: search || undefined,
         hasil: statusFilter || undefined,
         startDate: startDate || undefined, endDate: endDate || undefined,
         satker_id: satkerFilter || undefined,
@@ -88,7 +96,7 @@ export default function Tahap1Usulan({ tahap = 1 }: { tahap?: number }) {
     } finally {
       setLoading(false)
     }
-  }, [page, limit, search, statusFilter, startDate, endDate, satkerFilter, tahap, sortOrder])
+  }, [page, limit, search, statusFilter, startDate, endDate, satkerFilter, tahap, sortOrder, selectedYear])
 
   useEffect(() => {
     fetchList()
@@ -123,6 +131,9 @@ export default function Tahap1Usulan({ tahap = 1 }: { tahap?: number }) {
         </button>
       </div>
 
+      <YearSelect value={selectedYear} placeholder="Pilih tahun" onChange={(year) => { setData([]); setLoading(Boolean(year)); setSelectedYear(year); setPage(1) }} />
+
+      {selectedYear ? <>
       <TableToolbar search={search} onSearchChange={(value) => { setSearch(value); setPage(1) }} searchPlaceholder="Cari inovasi / PIC..." sortOrder={sortOrder} onSortOrderChange={(value) => { setSortOrder(value); setPage(1) }}>
         <label className="block text-xs font-medium text-slate-500">Status
           <select value={statusFilter} onChange={(e) => { setStatusFilter(e.target.value); setPage(1) }} className="mt-1 h-9 w-full rounded-md border border-slate-200 bg-white px-2.5 text-sm text-slate-700 outline-none transition focus:border-violet-300 focus:ring-2 focus:ring-violet-100">
@@ -203,6 +214,7 @@ export default function Tahap1Usulan({ tahap = 1 }: { tahap?: number }) {
         </div>
         <TablePagination meta={meta} onPage={setPage} onLimitChange={(size) => { setLimit(size); setPage(1) }} />
       </div>
+      </> : <div className="rounded-xl border border-dashed border-gray-300 bg-white px-6 py-12 text-center text-sm text-gray-500">Pilih tahun pengajuan untuk menampilkan usulan inovasi reviewer.</div>}
 
     </div>
   )

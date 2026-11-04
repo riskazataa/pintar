@@ -16,6 +16,7 @@ import { getStatusPresentation } from '../../utils/inovasi-status'
 import TablePagination from '../../components/TablePagination'
 import TableToolbar, { type TableSortOrder } from '../../components/TableToolbar'
 import { useNotifications } from '../../components/NotificationProvider'
+import YearSelect from '../../components/YearSelect'
 import { KRITERIA_PEMBARUAN, normalizeKriteriaInovasi } from '../../utils/kriteria-inovasi'
 
 interface UsulanItem {
@@ -30,12 +31,15 @@ interface UsulanItem {
   pic_nama?: string
   no_telp?: string
   pic_telp?: string
+  pic_penanggung_jawab?: PICContact[] | null
   status: 'PENDING' | 'APPROVED' | 'REJECTED' | 'PERBAIKAN' | 'SELESAI_EVALUASI'
   hasil_penilaian?: string | null
   hasil_penilaian_tahap1?: string | null
   usulan_signatures?: { user_id: string | number; tahap: number; keputusan?: string | null }[]
   penilai?: { id: string | number }[]
 }
+
+interface PICContact { nama: string; no_whatsapp: string }
 
 interface PaginationMeta {
   page: number; limit: number; total: number; totalPages: number
@@ -58,8 +62,8 @@ interface FormErrors {
   tahun?: string
   jenisInovasi?: string
   linkDataDukung?: string
-  penanggungJawab?: string
-  noWhatsapp?: string
+  penanggungJawab?: (string | undefined)[]
+  noWhatsapp?: (string | undefined)[]
 }
 
 const STATUS_OPTIONS = [
@@ -145,6 +149,7 @@ export default function Usulan() {
   const [endDate, setEndDate] = useState('')
   const [page, setPage] = useState(1)
   const [sortOrder, setSortOrder] = useState<TableSortOrder>('desc')
+  const [selectedYear, setSelectedYear] = useState('')
 
   const [modalOpen, setModalOpen] = useState(false)
   const [editingId, setEditingId] = useState<string | null>(null)
@@ -159,8 +164,7 @@ export default function Usulan() {
   const [jenisPickerOpen, setJenisPickerOpen] = useState(false)
   const [kriteria, setKriteria] = useState<string[]>([])
   const [linkDataDukung, setLinkDataDukung] = useState('')
-  const [penanggungJawab, setPenanggungJawab] = useState('')
-  const [noWhatsapp, setNoWhatsapp] = useState('')
+  const [picContacts, setPicContacts] = useState<PICContact[]>([{ nama: '', no_whatsapp: '' }])
   const [formErrors, setFormErrors] = useState<FormErrors>({})
   const [showAssessmentErrors, setShowAssessmentErrors] = useState(false)
   
@@ -174,10 +178,16 @@ export default function Usulan() {
   const [detailUsulan, setDetailUsulan] = useState<any>(null)
 
   const fetchList = useCallback(async () => {
+    if (!selectedYear) {
+      setData([])
+      setMeta({ page: 1, limit, total: 0, totalPages: 0 })
+      setLoading(false)
+      return
+    }
     setLoading(true)
     setError('')
     try {
-      const res = await getUsulanList({ page, limit, search: search || undefined, hasil: statusFilter || undefined, startDate: startDate || undefined, endDate: endDate || undefined, sort_order: sortOrder })
+      const res = await getUsulanList({ page, limit, tahun: Number(selectedYear), search: search || undefined, hasil: statusFilter || undefined, startDate: startDate || undefined, endDate: endDate || undefined, sort_order: sortOrder })
       const body = res.data
       const list: UsulanItem[] = Array.isArray(body) ? body : body.data ?? []
       setData(statusFilter ? list : list.filter((item) => item.status !== 'SELESAI_EVALUASI'))
@@ -187,7 +197,7 @@ export default function Usulan() {
     } finally {
       setLoading(false)
     }
-  }, [page, limit, search, statusFilter, startDate, endDate, sortOrder])
+  }, [page, limit, search, statusFilter, startDate, endDate, sortOrder, selectedYear])
 
   useEffect(() => { if (!isCreatePage) fetchList() }, [fetchList, refreshKey, isCreatePage])
 
@@ -236,7 +246,7 @@ export default function Usulan() {
   }
 
   const openCreate = () => {
-    setEditingId(null); setStep(1); setNamaInovasi(''); setDeskripsiInovasi(''); setTahun(new Date().getFullYear().toString()); setJenisInovasi([]); setJenisPickerOpen(false); setKriteria([]); setLinkDataDukung(''); setPenanggungJawab(''); setNoWhatsapp(''); setAnswers({}); setQuestions([]); setAssessmentColumns([]); setCatatanPerbaikan(''); setDetailUsulan(null); setFormErrors({}); setShowAssessmentErrors(false); setModalOpen(false)
+    setEditingId(null); setStep(1); setNamaInovasi(''); setDeskripsiInovasi(''); setTahun(new Date().getFullYear().toString()); setJenisInovasi([]); setJenisPickerOpen(false); setKriteria([]); setLinkDataDukung(''); setPicContacts([{ nama: '', no_whatsapp: '' }]); setAnswers({}); setQuestions([]); setAssessmentColumns([]); setCatatanPerbaikan(''); setDetailUsulan(null); setFormErrors({}); setShowAssessmentErrors(false); setModalOpen(false)
     navigate('/satker/usulan/tambah')
   }
 
@@ -260,8 +270,12 @@ export default function Usulan() {
       setJenisPickerOpen(false)
       setKriteria(normalizeKriteriaInovasi(detail.kriteria_inovasi))
       setLinkDataDukung(detail.link_data_dukung || '')
-      setPenanggungJawab(detail.pic_nama || '')
-      setNoWhatsapp(detail.pic_telp || '')
+      const savedPicContacts = Array.isArray(detail.pic_penanggung_jawab)
+        ? detail.pic_penanggung_jawab.filter((contact: any) => contact?.nama || contact?.no_whatsapp)
+        : []
+      setPicContacts(savedPicContacts.length
+        ? savedPicContacts.slice(0, 2).map((contact: any) => ({ nama: contact.nama || '', no_whatsapp: contact.no_whatsapp || '' }))
+        : [{ nama: detail.pic_nama || '', no_whatsapp: detail.pic_telp || '' }])
       setCatatanPerbaikan(detail.catatan_perbaikan || '')
       setAnswers({})
       setQuestions([])
@@ -281,11 +295,14 @@ export default function Usulan() {
       if (!jenisInovasi.length) errors.jenisInovasi = 'Pilih minimal satu jenis inovasi.'
       if (!linkDataDukung.trim()) errors.linkDataDukung = 'Link data dukung wajib diisi.'
       else if (!isValidSupportLink(linkDataDukung)) errors.linkDataDukung = 'Masukkan tautan lengkap yang diawali http:// atau https://.'
-      if (!penanggungJawab.trim()) errors.penanggungJawab = 'Nama penanggung jawab wajib diisi.'
-      if (!noWhatsapp.trim()) errors.noWhatsapp = 'Nomor WhatsApp wajib diisi.'
-      else if (!/^(?:08\d{8,11}|\+628\d{7,10})$/.test(noWhatsapp)) {
-        errors.noWhatsapp = 'Gunakan nomor 10–13 digit yang diawali 08 atau +628.'
-      }
+      const namaPicErrors = picContacts.map((contact) => contact.nama.trim() ? undefined : 'Nama penanggung jawab wajib diisi.')
+      const noWhatsappErrors = picContacts.map((contact) => {
+        if (!contact.no_whatsapp.trim()) return 'Nomor WhatsApp wajib diisi.'
+        if (!/^(?:08\d{8,11}|\+628\d{7,10})$/.test(contact.no_whatsapp)) return 'Gunakan nomor 10–13 digit yang diawali 08 atau +628.'
+        return undefined
+      })
+      if (namaPicErrors.some(Boolean)) errors.penanggungJawab = namaPicErrors
+      if (noWhatsappErrors.some(Boolean)) errors.noWhatsapp = noWhatsappErrors
       setFormErrors(errors)
       if (Object.keys(errors).length) { notify('Periksa kembali field yang ditandai merah.', 'warning'); return }
       if (!questions.length) await loadQuestions()
@@ -305,7 +322,7 @@ export default function Usulan() {
     }))
     if (missingColumn) { setShowAssessmentErrors(true); notify('Kolom "' + missingColumn.title + '" wajib diisi pada pertanyaan yang masih kosong.', 'warning'); setSaving(false); return }
     const payload = {
-      judul: namaInovasi, deskripsi_inovasi: deskripsiInovasi.trim(), tahun: parseInt(tahun, 10), jenis_inovasi: jenisInovasi[0], jenis_inovasi_pilihan: jenisInovasi, jenis_inovasi_lainnya: '', kriteria_inovasi: normalizeKriteriaInovasi(kriteria), link_data_dukung: linkDataDukung, pic_nama: penanggungJawab, pic_telp: noWhatsapp,
+      judul: namaInovasi, deskripsi_inovasi: deskripsiInovasi.trim(), tahun: parseInt(tahun, 10), jenis_inovasi: jenisInovasi[0], jenis_inovasi_pilihan: jenisInovasi, jenis_inovasi_lainnya: '', kriteria_inovasi: normalizeKriteriaInovasi(kriteria), link_data_dukung: linkDataDukung, pic_nama: picContacts[0]?.nama || '', pic_telp: picContacts[0]?.no_whatsapp || '', pic_penanggung_jawab: picContacts,
       assessment_answers: Object.values(answers).map((answer) => ({
         question_id: parseInt(answer.question_id, 10) || 0,
         jawaban_boolean: answer.jawaban_boolean,
@@ -322,6 +339,8 @@ export default function Usulan() {
       setCatatanPerbaikan('')
       setDetailUsulan(null)
       setRefreshKey((k) => k + 1)
+      setSelectedYear(tahun)
+      setPage(1)
       if (isCreatePage) navigate('/satker/usulan')
     } catch (err: unknown) {
       notify(axios.isAxiosError(err) ? err.response?.data?.message || 'Gagal menyimpan' : 'Terjadi kesalahan', 'error')
@@ -378,6 +397,9 @@ export default function Usulan() {
         </button>
       </div>
 
+      <YearSelect value={selectedYear} placeholder="Pilih tahun" onChange={(year) => { setData([]); setLoading(Boolean(year)); setSelectedYear(year); setPage(1) }} />
+
+      {selectedYear ? <>
       <TableToolbar search={search} onSearchChange={(value) => { setSearch(value); setPage(1) }} searchPlaceholder="Cari nama inovasi..." sortOrder={sortOrder} onSortOrderChange={(value) => { setSortOrder(value); setPage(1) }}>
         <label className="block text-xs font-medium text-slate-500">Status
           <select value={statusFilter} onChange={(e) => { setStatusFilter(e.target.value); setPage(1) }} className="mt-1 h-9 w-full rounded-md border border-slate-200 bg-white px-2.5 text-sm text-slate-700 outline-none transition focus:border-violet-300 focus:ring-2 focus:ring-violet-100">
@@ -414,8 +436,8 @@ export default function Usulan() {
                   <td className="whitespace-nowrap px-4 py-3.5 text-gray-600 sm:px-6">{formatDate(item.createdAt || item.created_at || item.tanggal_masuk)}</td>
                   <td className="whitespace-nowrap px-4 py-3.5 font-medium text-gray-800 sm:px-6">{item.nama_satker || userSatker}</td>
                   <td className="px-4 py-3.5 text-gray-800 sm:px-6">{item.judul || item.nama_inovasi}</td>
-                  <td className="hidden whitespace-nowrap px-4 py-3.5 text-gray-600 sm:table-cell sm:px-6">{item.pic_nama || item.penanggung_jawab || '-'}</td>
-                  <td className="hidden whitespace-nowrap px-4 py-3.5 text-gray-600 md:table-cell sm:px-6">{item.pic_telp || item.no_telp || '-'}</td>
+                  <td className="hidden whitespace-nowrap px-4 py-3.5 text-gray-600 sm:table-cell sm:px-6">{item.pic_penanggung_jawab?.length ? item.pic_penanggung_jawab.map((contact) => contact.nama).filter(Boolean).join(', ') : item.pic_nama || item.penanggung_jawab || '-'}</td>
+                  <td className="hidden whitespace-nowrap px-4 py-3.5 text-gray-600 md:table-cell sm:px-6">{item.pic_penanggung_jawab?.length ? item.pic_penanggung_jawab.map((contact) => contact.no_whatsapp).filter(Boolean).join(', ') : item.pic_telp || item.no_telp || '-'}</td>
                   <td className="whitespace-nowrap px-4 py-3.5 sm:px-6">
                     {(() => { const status = getStatusPresentation(item); return <span className={`inline-flex rounded-full border px-2.5 py-1 text-xs font-semibold ${status.className}`}>{status.label}</span> })()}
                   </td>
@@ -443,6 +465,7 @@ export default function Usulan() {
         </div>
         <TablePagination meta={meta} onPage={setPage} onLimitChange={(size) => { setLimit(size); setPage(1) }} />
       </div>
+      </> : <div className="rounded-xl border border-dashed border-gray-300 bg-white px-6 py-12 text-center text-sm text-gray-500">Pilih tahun pengajuan untuk menampilkan usulan.</div>}
 
       {deleteTarget && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
@@ -466,8 +489,8 @@ export default function Usulan() {
                 <h2 className="text-lg font-semibold text-gray-800">{editingId ? 'Edit Usulan' : 'Tambah Usulan'}</h2>
                 {isCreatePage && <p className="mt-1 text-sm text-gray-500">Lengkapi data inovasi dan self assessment.</p>}
               </div>
-              <button onClick={closeForm} className={isCreatePage ? 'rounded-lg border border-gray-200 px-3 py-2 text-sm font-medium text-gray-600 transition hover:bg-gray-50' : 'rounded-lg p-1 text-gray-400 hover:bg-gray-100'}>
-                {isCreatePage ? 'Kembali ke daftar' : <svg className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>}
+              <button onClick={() => isCreatePage && step === 2 ? setStep(1) : closeForm()} className={isCreatePage ? 'rounded-lg border border-gray-200 px-3 py-2 text-sm font-medium text-gray-600 transition hover:bg-gray-50' : 'rounded-lg p-1 text-gray-400 hover:bg-gray-100'}>
+                {isCreatePage ? step === 2 ? 'Kembali ke Data Usulan' : 'Kembali ke daftar' : <svg className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>}
               </button>
             </div>
             <div className="flex border-b bg-gray-50/50 px-6 py-3">
@@ -537,24 +560,41 @@ export default function Usulan() {
                     <input type="url" required value={linkDataDukung} onChange={(e) => { setLinkDataDukung(e.target.value); setFormErrors((errors) => ({ ...errors, linkDataDukung: undefined })) }} placeholder="https://..." aria-invalid={Boolean(formErrors.linkDataDukung)} className={`w-full rounded-lg border px-4 py-2.5 text-sm outline-none focus:ring-2 ${formErrors.linkDataDukung ? 'border-red-400 bg-red-50/40 focus:border-red-500 focus:ring-red-100' : 'border-gray-300 focus:border-blue-500 focus:ring-blue-200'}`} />
                     {formErrors.linkDataDukung && <p className="mt-1 text-xs text-red-600">{formErrors.linkDataDukung}</p>}
                   </div>
-                  <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                    <div>
-                      <label className={`mb-1 block text-sm font-medium ${formErrors.penanggungJawab ? 'text-red-600' : 'text-gray-700'}`}>Nama Penanggung Jawab <span className="text-red-500">*</span></label>
-                      <input type="text" value={penanggungJawab} onChange={(e) => { setPenanggungJawab(e.target.value); setFormErrors((errors) => ({ ...errors, penanggungJawab: undefined })) }} placeholder="Nama lengkap" aria-invalid={Boolean(formErrors.penanggungJawab)} className={`w-full rounded-lg border px-4 py-2.5 text-sm outline-none focus:ring-2 ${formErrors.penanggungJawab ? 'border-red-400 bg-red-50/40 focus:border-red-500 focus:ring-red-100' : 'border-gray-300 focus:border-blue-500 focus:ring-blue-200'}`} />
-                      {formErrors.penanggungJawab && <p className="mt-1 text-xs text-red-600">{formErrors.penanggungJawab}</p>}
-                    </div>
-                    <div>
-                      <label className={`mb-1 block text-sm font-medium ${formErrors.noWhatsapp ? 'text-red-600' : 'text-gray-700'}`}>No. WhatsApp <span className="text-red-500">*</span></label>
-                      <input type="tel" inputMode="tel" autoComplete="tel" maxLength={14} value={noWhatsapp} onChange={(e) => {
-                        const raw = e.target.value.replace(/[^\d+]/g, '')
-                        const hasPlusPrefix = raw.startsWith('+')
-                        const compact = hasPlusPrefix ? `+${raw.slice(1).replace(/\+/g, '')}` : raw.replace(/\+/g, '')
-                        const digits = compact.replace(/\D/g, '').slice(0, 13)
-                        setNoWhatsapp(hasPlusPrefix ? `+${digits}` : digits)
-                        setFormErrors((errors) => ({ ...errors, noWhatsapp: undefined }))
-                      }} placeholder="08xxxxxxxxxx atau +628xxxxxxxxxx" aria-invalid={Boolean(formErrors.noWhatsapp)} className={`w-full rounded-lg border px-4 py-2.5 text-sm outline-none focus:ring-2 ${formErrors.noWhatsapp ? 'border-red-400 bg-red-50/40 focus:border-red-500 focus:ring-red-100' : 'border-gray-300 focus:border-blue-500 focus:ring-blue-200'}`} />
-                      {formErrors.noWhatsapp ? <p className="mt-1 text-xs text-red-600">{formErrors.noWhatsapp}</p> : <p className="mt-1 text-xs text-gray-500">10–13 digit, diawali 08 atau +628.</p>}
-                    </div>
+                  <div className="space-y-4">
+                    {picContacts.map((contact, index) => {
+                      const namaError = formErrors.penanggungJawab?.[index]
+                      const noWhatsappError = formErrors.noWhatsapp?.[index]
+                      return (
+                        <div key={index} className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                          <div>
+                            <label className={`mb-1 flex items-center justify-between text-sm font-medium ${namaError ? 'text-red-600' : 'text-gray-700'}`}>
+                              <span>Nama Penanggung Jawab{picContacts.length > 1 ? ` ${index + 1}` : ''} <span className="text-red-500">*</span></span>
+                              {picContacts.length > 1 && <button type="button" onClick={() => { setPicContacts((contacts) => contacts.filter((_, i) => i !== index)); setFormErrors((errors) => ({ ...errors, penanggungJawab: undefined, noWhatsapp: undefined })) }} className="text-xs font-medium text-red-600 hover:text-red-700">Hapus</button>}
+                            </label>
+                            <input type="text" value={contact.nama} onChange={(e) => { setPicContacts((contacts) => contacts.map((item, i) => i === index ? { ...item, nama: e.target.value } : item)); setFormErrors((errors) => ({ ...errors, penanggungJawab: undefined })) }} placeholder="Nama lengkap" aria-invalid={Boolean(namaError)} className={`w-full rounded-lg border px-4 py-2.5 text-sm outline-none focus:ring-2 ${namaError ? 'border-red-400 bg-red-50/40 focus:border-red-500 focus:ring-red-100' : 'border-gray-300 focus:border-blue-500 focus:ring-blue-200'}`} />
+                            {namaError && <p className="mt-1 text-xs text-red-600">{namaError}</p>}
+                          </div>
+                          <div>
+                            <label className={`mb-1 block text-sm font-medium ${noWhatsappError ? 'text-red-600' : 'text-gray-700'}`}>No. WhatsApp{picContacts.length > 1 ? ` ${index + 1}` : ''} <span className="text-red-500">*</span></label>
+                            <input type="tel" inputMode="tel" autoComplete="tel" maxLength={14} value={contact.no_whatsapp} onChange={(e) => {
+                              const raw = e.target.value.replace(/[^\d+]/g, '')
+                              const hasPlusPrefix = raw.startsWith('+')
+                              const compact = hasPlusPrefix ? `+${raw.slice(1).replace(/\+/g, '')}` : raw.replace(/\+/g, '')
+                              const digits = compact.replace(/\D/g, '').slice(0, 13)
+                              const no_whatsapp = hasPlusPrefix ? `+${digits}` : digits
+                              setPicContacts((contacts) => contacts.map((item, i) => i === index ? { ...item, no_whatsapp } : item))
+                              setFormErrors((errors) => ({ ...errors, noWhatsapp: undefined }))
+                            }} placeholder="08xxxxxxxxxx atau +628xxxxxxxxxx" aria-invalid={Boolean(noWhatsappError)} className={`w-full rounded-lg border px-4 py-2.5 text-sm outline-none focus:ring-2 ${noWhatsappError ? 'border-red-400 bg-red-50/40 focus:border-red-500 focus:ring-red-100' : 'border-gray-300 focus:border-blue-500 focus:ring-blue-200'}`} />
+                            {noWhatsappError ? <p className="mt-1 text-xs text-red-600">{noWhatsappError}</p> : <p className="mt-1 text-xs text-gray-500">10–13 digit, diawali 08 atau +628.</p>}
+                          </div>
+                        </div>
+                      )
+                    })}
+                    {picContacts.length < 2 ? (
+                      <button type="button" onClick={() => setPicContacts((contacts) => contacts.length < 2 ? [...contacts, { nama: '', no_whatsapp: '' }] : contacts)} className="inline-flex items-center gap-2 rounded-lg border border-blue-200 px-3 py-2 text-sm font-medium text-blue-700 transition hover:bg-blue-50">
+                        <span className="text-lg leading-none">+</span> Tambah Penanggung Jawab
+                      </button>
+                    ) : <p className="text-xs text-gray-500">Maksimal 2 penanggung jawab.</p>}
                   </div>
                 </div>
               )}

@@ -17,6 +17,7 @@ import {
 import type { BAColumn } from '../../services/inovasi.service'
 import TablePagination from '../../components/TablePagination'
 import TableToolbar, { type TableSortOrder } from '../../components/TableToolbar'
+import YearSelect from '../../components/YearSelect'
 
 interface HasilUsulan {
   id: string | number
@@ -164,18 +165,26 @@ export default function Hasil() {
   const [startDate, setStartDate] = useState('')
   const [endDate, setEndDate] = useState('')
   const [sortOrder, setSortOrder] = useState<TableSortOrder>('desc')
+  const [selectedYear, setSelectedYear] = useState('')
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [signDetail, setSignDetail] = useState<any>(null)
   const [exportingId, setExportingId] = useState<string | number | null>(null)
 
   const fetchResults = useCallback(async () => {
+    if (!selectedYear) {
+      setData([])
+      setMeta({ page: 1, limit, total: 0, totalPages: 0 })
+      setLoading(false)
+      return
+    }
     setLoading(true)
     setError('')
     try {
       const response = await getUsulanSelesai({
         page,
         limit,
+        tahun: Number(selectedYear),
         search: search.trim() || undefined,
         startDate: startDate || undefined,
         endDate: endDate || undefined,
@@ -191,7 +200,7 @@ export default function Hasil() {
     } finally {
       setLoading(false)
     }
-  }, [page, limit, search, startDate, endDate, sortOrder])
+  }, [page, limit, search, startDate, endDate, sortOrder, selectedYear])
 
   useEffect(() => { fetchResults() }, [fetchResults])
 
@@ -238,6 +247,9 @@ export default function Hasil() {
       </button>
     </div>
 
+    <YearSelect value={selectedYear} placeholder="Pilih tahun" onChange={(year) => { setData([]); setLoading(Boolean(year)); setSelectedYear(year); setPage(1) }} />
+
+    {selectedYear ? <>
     <TableToolbar search={search} onSearchChange={(value) => { setSearch(value); setPage(1) }} searchPlaceholder="Cari judul inovasi..." sortOrder={sortOrder} onSortOrderChange={(value) => { setSortOrder(value); setPage(1) }} onClearFilters={() => { setSearch(''); setStartDate(''); setEndDate(''); setSortOrder('desc'); setPage(1) }}>
       <label className="block text-xs font-medium text-slate-500">Dari tanggal
         <input type="date" value={startDate} onChange={(event) => { setStartDate(event.target.value); setPage(1) }} className="mt-1 h-9 w-full rounded-md border border-slate-200 bg-white px-2.5 text-sm text-slate-700 outline-none transition focus:border-violet-300 focus:ring-2 focus:ring-violet-100" />
@@ -300,6 +312,7 @@ export default function Hasil() {
       </div>
       {!loading && <TablePagination meta={meta} onPage={setPage} onLimitChange={(size) => { setLimit(size); setPage(1) }} />}
     </div>
+    </> : <div className="rounded-xl border border-dashed border-gray-300 bg-white px-6 py-12 text-center text-sm text-gray-500">Pilih tahun pengajuan untuk menampilkan hasil penilaian.</div>}
     {signDetail && <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-black/40 p-4"><section role="dialog" aria-modal="true" aria-label="Tanda tangan BA penilaian akhir" className="my-auto w-full max-w-2xl rounded-2xl bg-white p-6 shadow-xl"><div className="mb-5 flex items-start justify-between gap-4"><h2 className="font-semibold">{signDetail.judul}</h2><button type="button" aria-label="Tutup" onClick={() => setSignDetail(null)}>✕</button></div>{signDetail.signatures?.some((sig: any) => String(sig.user_id) === String(JSON.parse(localStorage.getItem('user') || '{}').id)) ? <p className="text-sm text-teal-700">Anda sudah menandatangani BA penilaian akhir ini.</p> : <FinalSignatureForm id={signDetail.id} satker={signDetail.satker} unitMode disabled={signDetail.requires_assessment_save} onSigned={async () => { setSignDetail(null); await fetchResults() }} />}</section></div>}
   </div>
 }

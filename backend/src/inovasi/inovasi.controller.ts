@@ -40,8 +40,11 @@ export class InovasiController {
 
   @Get('stats')
   @UseGuards(JwtAuthGuard)
-  async getStats(@Req() req: any) {
-    return this.inovasiService.getStats(req.user);
+  async getStats(
+    @Req() req: any,
+    @Query('tahun', new DefaultValuePipe(new Date().getFullYear()), ParseIntPipe) tahun: number,
+  ) {
+    return this.inovasiService.getStats(req.user, tahun);
   }
 
   @Get('hasil-evaluasi')

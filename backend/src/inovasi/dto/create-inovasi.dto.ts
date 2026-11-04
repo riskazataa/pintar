@@ -6,6 +6,8 @@ import {
   IsOptional,
   IsBoolean,
   IsObject,
+  Matches,
+  ArrayMaxSize,
   Min,
   ValidateNested,
 } from 'class-validator';
@@ -31,6 +33,17 @@ class AssessmentAnswerDto {
   @IsObject()
   @IsOptional()
   custom_values?: Record<string, string | number | boolean>;
+}
+
+class PenanggungJawabDto {
+  @IsString()
+  @IsNotEmpty()
+  nama: string;
+
+  @IsString()
+  @IsNotEmpty()
+  @Matches(/^(?:08\d{8,11}|\+628\d{7,10})$/)
+  no_whatsapp: string;
 }
 
 export class CreateInovasiDto {
@@ -75,6 +88,13 @@ export class CreateInovasiDto {
   @IsString()
   @IsNotEmpty()
   pic_telp: string;
+
+  @IsArray()
+  @ArrayMaxSize(2)
+  @IsOptional()
+  @ValidateNested({ each: true })
+  @Type(() => PenanggungJawabDto)
+  pic_penanggung_jawab?: PenanggungJawabDto[];
 
   @IsArray()
   @IsOptional()

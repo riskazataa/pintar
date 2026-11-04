@@ -126,14 +126,22 @@ export default function Tahap1DetailUsulan({ backPath = '/tim-penilai/usulan' }:
             <div>
               <h3 className="mb-3 text-sm font-bold text-gray-800">Penanggung Jawab (PIC)</h3>
               <div className="space-y-3">
-                <div className="flex items-center gap-3 rounded-xl bg-gray-50 p-3 border border-gray-100">
-                  <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-emerald-100 text-emerald-600"><i className="fa-solid fa-user text-sm"></i></div>
-                  <div className="min-w-0"><p className="text-[10px] text-gray-500 uppercase font-bold">Nama Lengkap</p><p className="text-sm font-bold text-gray-900 truncate">{data.pic_nama}</p></div>
-                </div>
-                <div className="flex items-center gap-3 rounded-xl bg-gray-50 p-3 border border-gray-100">
-                  <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-emerald-100 text-emerald-600"><i className="fa-brands fa-whatsapp text-sm"></i></div>
-                  <div className="min-w-0"><p className="text-[10px] text-gray-500 uppercase font-bold">No. Telepon / WA</p><p className="text-sm font-bold text-gray-900 truncate">{data.pic_telp}</p></div>
-                </div>
+                {(Array.isArray(data.pic_penanggung_jawab) && data.pic_penanggung_jawab.length
+                  ? data.pic_penanggung_jawab
+                  : [{ nama: data.pic_nama, no_whatsapp: data.pic_telp }]
+                ).map((contact: any, index: number) => (
+                  <div key={`${contact.nama}-${index}`} className="rounded-xl border border-gray-100 bg-gray-50 p-3">
+                    {index > 0 && <p className="mb-2 text-[10px] font-bold uppercase tracking-wider text-gray-400">Penanggung Jawab {index + 1}</p>}
+                    <div className="flex items-center gap-3">
+                      <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-emerald-100 text-emerald-600"><i className="fa-solid fa-user text-sm"></i></div>
+                      <div className="min-w-0"><p className="text-[10px] text-gray-500 uppercase font-bold">Nama Lengkap</p><p className="text-sm font-bold text-gray-900 truncate">{contact.nama || '-'}</p></div>
+                    </div>
+                    <div className="mt-2 flex items-center gap-3">
+                      <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-emerald-100 text-emerald-600"><i className="fa-brands fa-whatsapp text-sm"></i></div>
+                      <div className="min-w-0"><p className="text-[10px] text-gray-500 uppercase font-bold">No. Telepon / WA</p><p className="text-sm font-bold text-gray-900 truncate">{contact.no_whatsapp || '-'}</p></div>
+                    </div>
+                  </div>
+                ))}
               </div>
             </div>
             <div className="pt-4 border-t border-gray-100">

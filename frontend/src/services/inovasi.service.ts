@@ -1,6 +1,6 @@
 import api from '../api/axios'
 
-export const getStatsInovasi = () => api.get('/inovasi/stats')
+export const getStatsInovasi = (tahun?: number) => api.get('/inovasi/stats', { params: { tahun } })
 
 export const getUsulanList = (params?: {
   page?: number
@@ -12,6 +12,7 @@ export const getUsulanList = (params?: {
   endDate?: string
   satker_id?: number | string
   tahap?: number
+  tahun?: number
   assignedToMe?: boolean
   sort_order?: 'asc' | 'desc'
 }) => {
@@ -79,6 +80,7 @@ export const getUsulanSelesai = (params?: {
   satker_id?: number | string
   hasil?: string
   tahap?: number
+  tahun?: number
   sort_order?: 'asc' | 'desc'
 }) => {
   const { startDate, endDate, ...query } = params ?? {}
