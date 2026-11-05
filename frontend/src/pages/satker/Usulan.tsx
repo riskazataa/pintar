@@ -613,7 +613,7 @@ export default function Usulan() {
                     </div>
                   </div>
                   <div>
-                    <label className={`mb-1 block text-sm font-medium ${formErrors.linkDataDukung ? 'text-red-600' : 'text-gray-700'}`}>Link Data Dukung <span className="text-red-500">*</span></label>
+                    <label className={`mb-1 block text-sm font-medium ${formErrors.linkDataDukung ? 'text-red-600' : 'text-gray-700'}`}>Link Data Dukung (Surat Pengantar, Penjelasan Inovasi, Data Dukung) <span className="text-red-500">*</span></label>
                     <input type="url" required value={linkDataDukung} onChange={(e) => { setLinkDataDukung(e.target.value); setFormErrors((errors) => ({ ...errors, linkDataDukung: undefined })) }} placeholder="https://..." aria-invalid={Boolean(formErrors.linkDataDukung)} className={`w-full rounded-lg border px-4 py-2.5 text-sm outline-none focus:ring-2 ${formErrors.linkDataDukung ? 'border-red-400 bg-red-50/40 focus:border-red-500 focus:ring-red-100' : 'border-gray-300 focus:border-blue-500 focus:ring-blue-200'}`} />
                     {formErrors.linkDataDukung && <p className="mt-1 text-xs text-red-600">{formErrors.linkDataDukung}</p>}
                   </div>
