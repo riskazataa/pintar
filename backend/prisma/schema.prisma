@@ -53,6 +53,7 @@ model User {
 }
 
 enum StatusInovasi {
+  DRAFT
   PENDING
   APPROVED
   REJECTED

@@ -1,0 +1,1 @@
+ALTER TYPE "StatusInovasi" ADD VALUE 'DRAFT';

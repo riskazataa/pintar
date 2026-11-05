@@ -42,6 +42,7 @@ function App() {
         <Route path="dashboard" element={<DashboardAnalytics />} />
         <Route path="akun" element={<Akun />} />
         <Route path="organisasi" element={<Organisasi />} />
+      <Route path="management-ba" element={<ManagementBA />} />
         <Route path="profil" element={<Profile />} />
       </Route>
 
@@ -51,6 +52,7 @@ function App() {
         <Route path="dashboard" element={<DashboardAnalytics />} />
         <Route path="usulan" element={<UsulanSatker />} />
         <Route path="usulan/tambah" element={<UsulanSatker />} />
+        <Route path="usulan/:id/edit" element={<UsulanSatker />} />
         
         {/* 2. DAFTARKAN RUTE DETAIL DENGAN PARAMETER ID DI SINI */}
         <Route path="usulan/:id" element={<DetailUsulan />} />
@@ -76,12 +78,11 @@ function App() {
         <Route path="tahap-1/evaluasi/:id" element={<LegacyUsulanRedirect tahap={1} />} />
         <Route path="tahap-1/hasil" element={<Navigate to="/tim-penilai/usulan" replace />} />
 
-        {/* Penilaian Tahap 2 & Management BA */}
+        {/* Penilaian Tahap 2 */}
         <Route path="tahap-2" element={<Navigate to="/tim-penilai/usulan" replace />} />
         <Route path="tahap-2/evaluasi" element={<Navigate to="/tim-penilai/usulan" replace />} />
         <Route path="tahap-2/evaluasi/:id" element={<LegacyUsulanRedirect tahap={2} />} />
         <Route path="tahap-2/hasil" element={<Navigate to="/tim-penilai/usulan" replace />} />
-        <Route path="management-ba" element={<ManagementBA />} />
         <Route path="profil" element={<Profile />} />
       </Route>
 

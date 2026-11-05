@@ -21,7 +21,6 @@ interface MenuItem {
 const menuItems: MenuItem[] = [
   { to: '/tim-penilai/dashboard', label: 'Dashboard', icon: 'dashboard' },
   { to: '/tim-penilai/usulan', label: 'Penilaian Inovasi', icon: 'document' },
-  { to: '/tim-penilai/management-ba', label: 'Management BA Inovasi', icon: 'folder' },
 ]
 
 function MenuIcon({ name }: { name: string }) {

@@ -69,7 +69,7 @@ export default function Landing({ initialModal = null }: { initialModal?: Modal 
     <header className="border-b border-slate-100 bg-white/95">
       <nav aria-label="Navigasi utama" className="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-5 px-5 py-5 sm:px-8">
         <a href="/" aria-label="SIAPIN — beranda" className="flex items-center gap-3"><img src="/siapin-logo.svg" alt="" className="h-11 w-11 drop-shadow-sm" /><span className="text-xl font-extrabold tracking-tight text-slate-900">SIAPIN<span className="block text-[10px] font-medium uppercase tracking-[.13em] text-slate-500">Sistem Informasi Aplikasi Penetapan Inovasi</span></span></a>
-        <div className="order-3 flex w-full justify-center gap-7 text-sm font-medium text-slate-500 md:order-none md:w-auto"><a className="hover:text-blue-600" href="#fitur">Fitur</a><a className="hover:text-blue-600" href="#alur">Cara kerja</a><a className="hover:text-blue-600" href="#faq">Tanya jawab</a><a className="hover:text-blue-600" href="#informasi">Informasi</a></div>
+        <div className="order-3 flex w-full justify-center gap-7 text-sm font-medium text-slate-500 md:order-none md:w-auto"><a className="hover:text-blue-600" href="#fitur">Fitur</a><a className="hover:text-blue-600" href="#alur">Cara kerja</a><a className="hover:text-blue-600" href="#faq">Tanya jawab</a><a className="hover:text-blue-600" href="#informasi">Kontak Admin</a></div>
         <div className="flex items-center gap-4"><button onClick={() => open('register')} className="text-sm font-semibold text-slate-600 hover:text-blue-600">Daftar</button><button onClick={() => open('login')} className={primary}>Masuk <Icon className="h-4 w-4" /></button></div>
       </nav>
     </header>
@@ -113,11 +113,11 @@ export default function Landing({ initialModal = null }: { initialModal?: Modal 
       <section id="informasi" className="border-y border-slate-100 bg-white">
         <div className="mx-auto max-w-7xl px-5 py-16 sm:px-8 sm:py-20">
           <p className="text-xs font-bold uppercase tracking-[.18em] text-blue-600">Kami siap membantu</p>
-          <h2 className="mt-3 text-3xl font-bold tracking-tight">Informasi dan masukan</h2>
+          <h2 className="mt-3 text-3xl font-bold tracking-tight">Kontak Admin dan masukan</h2>
           <div className="mt-8 grid gap-5 lg:grid-cols-2">
             <article className="rounded-2xl border border-slate-200 bg-[#fbfcfe] p-6 sm:p-8">
               <span className="inline-flex rounded-xl bg-blue-50 p-3 text-blue-600"><Icon kind="phone" /></span>
-              <h3 className="mt-5 text-lg font-semibold">Informasi Admin</h3>
+              <h3 className="mt-5 text-lg font-semibold">Kontak Admin</h3>
               <p className="mt-4 text-sm text-slate-500">Nama</p>
               <p className="mt-1 font-semibold text-slate-800">Riska Zata Amani</p>
               <p className="mt-4 text-sm text-slate-500">WhatsApp</p>

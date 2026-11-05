@@ -27,6 +27,7 @@ import { QueryInovasiDto } from './dto/query-inovasi.dto';
 import { UpdateAssessmentPenilaiDto } from './dto/update-assessment-penilai.dto';
 import { UpdateAssessmentAnswersDto } from './dto/update-assessment-answers.dto';
 import { SignInovasiDto } from './dto/sign-inovasi.dto';
+import { SaveInovasiDraftDto } from './dto/save-inovasi-draft.dto';
 
 @Controller('inovasi')
 export class InovasiController {
@@ -81,6 +82,22 @@ export class InovasiController {
   @UseGuards(JwtAuthGuard)
   async create(@Body() dto: CreateInovasiDto, @Req() req: any) {
     return this.inovasiService.create(dto, req.user);
+  }
+
+  @Post('draft')
+  @UseGuards(JwtAuthGuard)
+  async createDraft(@Body() dto: SaveInovasiDraftDto, @Req() req: any) {
+    return this.inovasiService.createDraft(dto, req.user);
+  }
+
+  @Patch(':id/draft')
+  @UseGuards(JwtAuthGuard)
+  async updateDraft(
+    @Param('id', ParseIntPipe) id: number,
+    @Body() dto: SaveInovasiDraftDto,
+    @Req() req: any,
+  ) {
+    return this.inovasiService.updateDraft(id, dto, req.user);
   }
 
   @Patch(':id/assign')

@@ -26,6 +26,8 @@ export const getUsulanDetail = (id: string | number, tahap = 1, view?: Assessmen
   api.get(`/inovasi/${id}`, { params: { tahap, ...(view ? { view } : {}) } })
 
 export const createUsulan = (data: any) => api.post('/inovasi', data)
+export const createUsulanDraft = (data: any) => api.post('/inovasi/draft', data)
+export const updateUsulanDraft = (id: string | number, data: any) => api.patch(`/inovasi/${id}/draft`, data)
 
 export const updateUsulan = (id: string | number, data: any) => {
   return api.patch(`/inovasi/${id}`, data); 
