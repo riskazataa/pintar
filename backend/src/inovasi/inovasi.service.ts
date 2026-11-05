@@ -14,6 +14,7 @@ import { QueryInovasiDto } from './dto/query-inovasi.dto';
 import { UpdateAssessmentPenilaiDto } from './dto/update-assessment-penilai.dto';
 import { UpdateAssessmentAnswersDto } from './dto/update-assessment-answers.dto';
 import { SignInovasiDto } from './dto/sign-inovasi.dto';
+import { SaveInovasiDraftDto } from './dto/save-inovasi-draft.dto';
 import { loadTemplateConfig } from '../assessment/template-config';
 import { composeStage2Answers } from './stage2-assessment';
 import { orderFinalSignatureGroups } from './final-signature-order';
@@ -55,6 +56,8 @@ export class InovasiService {
     const where: Prisma.InovasiWhereInput = {};
     if (tahun) where.tahun = tahun;
 
+    if (user.role !== 'UNIT' || query.hasil) where.status = { not: StatusInovasi.DRAFT };
+
     if (user.role === 'UNIT' && user.satker_id) {
       where.satker_id = user.satker_id;
     } else if (
@@ -73,7 +76,8 @@ export class InovasiService {
     }
 
     if (status) {
-      if (query.tahap === 2) where.status_tahap2 = status;
+      if (status === StatusInovasi.DRAFT && user.role !== 'UNIT') where.id = -1;
+      else if (query.tahap === 2) where.status_tahap2 = status;
       else where.status = status;
     }
 
@@ -363,6 +367,135 @@ export class InovasiService {
     }
   }
 
+  private normalizeDraftAnswers(dto: SaveInovasiDraftDto) {
+    return (dto.assessment_answers ?? [])
+      .filter((answer) => Number.isInteger(answer.question_id))
+      .map((answer) => ({
+        question_id: answer.question_id!,
+        jawaban_boolean: answer.jawaban_boolean ?? false,
+        catatan_string: answer.catatan_string ?? '',
+        link: answer.link ?? '',
+        custom_values: answer.custom_values ?? {},
+      }));
+  }
+
+  private normalizeDraftContacts(contacts?: Record<string, unknown>[]) {
+    return (contacts ?? []).slice(0, 2).map((contact) => ({
+      nama: typeof contact.nama === 'string' ? contact.nama : '',
+      no_whatsapp: typeof contact.no_whatsapp === 'string' ? contact.no_whatsapp : '',
+    }));
+  }
+
+  async createDraft(
+    dto: SaveInovasiDraftDto,
+    user: { sub: number; role: string; satker_id?: number | null },
+  ) {
+    if (user.role !== 'UNIT' || !user.satker_id) {
+      throw new ForbiddenException('Hanya akun unit yang dapat menyimpan draft usulan');
+    }
+
+    const assessmentAnswers = this.normalizeDraftAnswers(dto);
+    await this.validateQuestionStage(assessmentAnswers, 1);
+    await this.enforceSatkerLocks(assessmentAnswers);
+    const contacts = this.normalizeDraftContacts(dto.pic_penanggung_jawab);
+    const picNama = dto.pic_nama ?? contacts[0]?.nama ?? '';
+    const picTelp = dto.pic_telp ?? contacts[0]?.no_whatsapp ?? '';
+
+    return this.prisma.$transaction(async (tx) => {
+      const inovasi = await tx.inovasi.create({
+        data: {
+          judul: dto.judul?.trim() || 'Draft Usulan',
+          deskripsi_inovasi: dto.deskripsi_inovasi?.trim() || null,
+          tahun: dto.tahun ?? new Date().getFullYear(),
+          jenis_inovasi: dto.jenis_inovasi ?? '',
+          jenis_inovasi_pilihan: dto.jenis_inovasi_pilihan ?? [],
+          jenis_inovasi_lainnya: dto.jenis_inovasi_lainnya ?? '',
+          kriteria_inovasi: dto.kriteria_inovasi ?? [],
+          link_data_dukung: dto.link_data_dukung ?? '',
+          pic_nama: picNama,
+          pic_telp: picTelp,
+          pic_penanggung_jawab: contacts as Prisma.InputJsonArray,
+          status: StatusInovasi.DRAFT,
+          satker_id: user.satker_id!,
+          user_id: user.sub,
+        },
+      });
+
+      if (assessmentAnswers.length) {
+        await tx.assessmentAnswer.createMany({
+          data: assessmentAnswers.map((answer) => ({
+            inovasi_id: inovasi.id,
+            question_id: answer.question_id,
+            source: 'SATKER',
+            jawaban_boolean: answer.jawaban_boolean,
+            catatan_string: answer.catatan_string,
+            link: answer.link,
+            custom_values: answer.custom_values,
+          })),
+        });
+      }
+
+      return tx.inovasi.findUnique({ where: { id: inovasi.id }, include: this.includeConfig });
+    });
+  }
+
+  async updateDraft(
+    id: number,
+    dto: SaveInovasiDraftDto,
+    user: { sub: number; role: string; satker_id?: number | null },
+  ) {
+    const existing = await this.prisma.inovasi.findUnique({ where: { id } });
+    if (!existing) throw new NotFoundException('Inovasi tidak ditemukan');
+    if (existing.status !== StatusInovasi.DRAFT) {
+      throw new ForbiddenException('Hanya draft yang dapat diperbarui sebagai draft');
+    }
+    if (user.role !== 'UNIT' || existing.user_id !== user.sub || existing.satker_id !== user.satker_id) {
+      throw new ForbiddenException('Anda tidak memiliki akses ke draft ini');
+    }
+
+    const assessmentAnswers = this.normalizeDraftAnswers(dto);
+    await this.validateQuestionStage(assessmentAnswers, 1);
+    await this.enforceSatkerLocks(assessmentAnswers, id);
+    const contacts = this.normalizeDraftContacts(dto.pic_penanggung_jawab);
+    const data: Prisma.InovasiUpdateInput = {};
+    if (dto.judul !== undefined) data.judul = dto.judul.trim() || 'Draft Usulan';
+    if (dto.deskripsi_inovasi !== undefined) data.deskripsi_inovasi = dto.deskripsi_inovasi.trim() || null;
+    if (dto.tahun !== undefined) data.tahun = dto.tahun;
+    if (dto.jenis_inovasi !== undefined) data.jenis_inovasi = dto.jenis_inovasi;
+    if (dto.jenis_inovasi_pilihan !== undefined) data.jenis_inovasi_pilihan = dto.jenis_inovasi_pilihan;
+    if (dto.jenis_inovasi_lainnya !== undefined) data.jenis_inovasi_lainnya = dto.jenis_inovasi_lainnya;
+    if (dto.kriteria_inovasi !== undefined) data.kriteria_inovasi = dto.kriteria_inovasi;
+    if (dto.link_data_dukung !== undefined) data.link_data_dukung = dto.link_data_dukung;
+    if (dto.pic_nama !== undefined) data.pic_nama = dto.pic_nama;
+    if (dto.pic_telp !== undefined) data.pic_telp = dto.pic_telp;
+    if (dto.pic_penanggung_jawab !== undefined) {
+      data.pic_penanggung_jawab = contacts as Prisma.InputJsonArray;
+      if (dto.pic_nama === undefined) data.pic_nama = contacts[0]?.nama ?? '';
+      if (dto.pic_telp === undefined) data.pic_telp = contacts[0]?.no_whatsapp ?? '';
+    }
+
+    return this.prisma.$transaction(async (tx) => {
+      await tx.inovasi.update({ where: { id }, data });
+      if (dto.assessment_answers !== undefined) {
+        await tx.assessmentAnswer.deleteMany({ where: { inovasi_id: id, tahap: 1, source: 'SATKER' } });
+        if (assessmentAnswers.length) {
+          await tx.assessmentAnswer.createMany({
+            data: assessmentAnswers.map((answer) => ({
+              inovasi_id: id,
+              question_id: answer.question_id,
+              source: 'SATKER',
+              jawaban_boolean: answer.jawaban_boolean,
+              catatan_string: answer.catatan_string,
+              link: answer.link,
+              custom_values: answer.custom_values,
+            })),
+          });
+        }
+      }
+      return tx.inovasi.findUnique({ where: { id }, include: this.includeConfig });
+    });
+  }
+
   async create(
     dto: CreateInovasiDto,
     user: { sub: number; role: string; satker_id?: number | null },
@@ -428,10 +561,14 @@ export class InovasiService {
       throw new NotFoundException('Inovasi tidak ditemukan');
     }
 
-    if (existing.status !== 'PERBAIKAN') {
+    if (existing.status !== StatusInovasi.PERBAIKAN && existing.status !== StatusInovasi.DRAFT) {
       throw new ForbiddenException(
-        'Inovasi hanya dapat diubah jika statusnya PERBAIKAN',
+        'Inovasi hanya dapat diubah jika berstatus Draft atau Perlu Perbaikan',
       );
+    }
+
+    if (existing.status === StatusInovasi.DRAFT && (user.role !== 'UNIT' || existing.user_id !== user.sub)) {
+      throw new ForbiddenException('Anda tidak memiliki akses ke draft ini');
     }
 
     if (user.role === 'UNIT' && existing.satker_id !== user.satker_id) {
@@ -504,10 +641,14 @@ export class InovasiService {
       throw new NotFoundException('Inovasi tidak ditemukan');
     }
 
-    if (existing.status !== 'PERBAIKAN') {
+    if (existing.status !== StatusInovasi.PERBAIKAN && existing.status !== StatusInovasi.DRAFT) {
       throw new ForbiddenException(
-        'Inovasi hanya dapat dihapus jika statusnya PERBAIKAN',
+        'Inovasi hanya dapat dihapus jika berstatus Draft atau Perlu Perbaikan',
       );
+    }
+
+    if (existing.status === StatusInovasi.DRAFT && (user.role !== 'UNIT' || existing.user_id !== user.sub)) {
+      throw new ForbiddenException('Anda tidak memiliki akses ke draft ini');
     }
 
     if (user.role === 'UNIT' && existing.satker_id !== user.satker_id) {
@@ -1039,8 +1180,8 @@ export class InovasiService {
   }, tahun = new Date().getFullYear()) {
     const shouldFilterBySatker = user.role === 'UNIT' && !!user.satker_id;
     const where: Prisma.InovasiWhereInput = shouldFilterBySatker
-      ? { satker_id: user.satker_id!, tahun }
-      : { tahun };
+      ? { satker_id: user.satker_id!, tahun, status: { not: StatusInovasi.DRAFT } }
+      : { tahun, status: { not: StatusInovasi.DRAFT } };
 
     const [
       total_usulan,

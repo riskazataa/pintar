@@ -1,10 +1,12 @@
 import { useEffect, useState, useCallback } from 'react'
-import { useLocation, useNavigate } from 'react-router-dom'
+import { useLocation, useNavigate, useParams } from 'react-router-dom'
 import axios from 'axios'
 import {
   getUsulanList,
   getUsulanDetail,
   createUsulan,
+  createUsulanDraft,
+  updateUsulanDraft,
   updateUsulan,
   deleteUsulan,
   getAssessmentQuestions,
@@ -32,7 +34,7 @@ interface UsulanItem {
   no_telp?: string
   pic_telp?: string
   pic_penanggung_jawab?: PICContact[] | null
-  status: 'PENDING' | 'APPROVED' | 'REJECTED' | 'PERBAIKAN' | 'SELESAI_EVALUASI'
+  status: 'DRAFT' | 'PENDING' | 'APPROVED' | 'REJECTED' | 'PERBAIKAN' | 'SELESAI_EVALUASI'
   hasil_penilaian?: string | null
   hasil_penilaian_tahap1?: string | null
   usulan_signatures?: { user_id: string | number; tahap: number; keputusan?: string | null }[]
@@ -133,6 +135,9 @@ export default function Usulan() {
   const navigate = useNavigate()
   const location = useLocation()
   const isCreatePage = location.pathname === '/satker/usulan/tambah'
+  const isEditPage = /^\/satker\/usulan\/[^/]+\/edit$/.test(location.pathname)
+  const isFormPage = isCreatePage || isEditPage
+  const { id: routeEditId } = useParams()
   const user = getUser()
   const userSatker = user?.satker?.nama_satker || user?.nama_satker || ''
 
@@ -151,7 +156,6 @@ export default function Usulan() {
   const [sortOrder, setSortOrder] = useState<TableSortOrder>('desc')
   const [selectedYear, setSelectedYear] = useState('')
 
-  const [modalOpen, setModalOpen] = useState(false)
   const [editingId, setEditingId] = useState<string | null>(null)
   const [deleteTarget, setDeleteTarget] = useState<UsulanItem | null>(null)
   const [deleting, setDeleting] = useState(false)
@@ -174,6 +178,7 @@ export default function Usulan() {
   const [answers, setAnswers] = useState<Record<string, AnswerEntry>>({})
   const [questionsLoading, setQuestionsLoading] = useState(false)
   const [saving, setSaving] = useState(false)
+  const [savingDraft, setSavingDraft] = useState(false)
   const [catatanPerbaikan, setCatatanPerbaikan] = useState('')
   const [detailUsulan, setDetailUsulan] = useState<any>(null)
 
@@ -199,7 +204,7 @@ export default function Usulan() {
     }
   }, [page, limit, search, statusFilter, startDate, endDate, sortOrder, selectedYear])
 
-  useEffect(() => { if (!isCreatePage) fetchList() }, [fetchList, refreshKey, isCreatePage])
+  useEffect(() => { if (!isFormPage) fetchList() }, [fetchList, refreshKey, isFormPage])
 
   const loadQuestions = async () => {
     setQuestionsLoading(true)
@@ -246,14 +251,14 @@ export default function Usulan() {
   }
 
   const openCreate = () => {
-    setEditingId(null); setStep(1); setNamaInovasi(''); setDeskripsiInovasi(''); setTahun(new Date().getFullYear().toString()); setJenisInovasi([]); setJenisPickerOpen(false); setKriteria([]); setLinkDataDukung(''); setPicContacts([{ nama: '', no_whatsapp: '' }]); setAnswers({}); setQuestions([]); setAssessmentColumns([]); setCatatanPerbaikan(''); setDetailUsulan(null); setFormErrors({}); setShowAssessmentErrors(false); setModalOpen(false)
+    setEditingId(null); setStep(1); setNamaInovasi(''); setDeskripsiInovasi(''); setTahun(new Date().getFullYear().toString()); setJenisInovasi([]); setJenisPickerOpen(false); setKriteria([]); setLinkDataDukung(''); setPicContacts([{ nama: '', no_whatsapp: '' }]); setAnswers({}); setQuestions([]); setAssessmentColumns([]); setCatatanPerbaikan(''); setDetailUsulan(null); setFormErrors({}); setShowAssessmentErrors(false)
     navigate('/satker/usulan/tambah')
   }
 
-  const openEdit = async (item: UsulanItem) => {
-    setEditingId(item.id); setStep(1); setModalOpen(true); setFormErrors({}); setShowAssessmentErrors(false)
+  const loadEdit = async (id: string) => {
+    setEditingId(id); setStep(1); setFormErrors({}); setShowAssessmentErrors(false)
     try {
-      const res = await getUsulanDetail(item.id)
+      const res = await getUsulanDetail(id)
       const detail = res.data?.data || res.data
       setDetailUsulan(detail)
       setNamaInovasi(detail.judul || '')
@@ -282,9 +287,22 @@ export default function Usulan() {
       setAssessmentColumns([])
     } catch {
       notify('Gagal memuat data usulan.', 'error')
-      setModalOpen(false)
+      navigate('/satker/usulan')
     }
   }
+
+  const openEdit = (item: UsulanItem) => navigate(`/satker/usulan/${item.id}/edit`)
+
+  useEffect(() => {
+    if (isEditPage && routeEditId && editingId !== routeEditId) void loadEdit(routeEditId)
+  }, [isEditPage, routeEditId, editingId])
+
+  useEffect(() => {
+    if (!isEditPage) {
+      setEditingId(null)
+      setDetailUsulan(null)
+    }
+  }, [isEditPage])
 
   const handleSubmit = async () => {
     if (step === 1) {
@@ -334,17 +352,57 @@ export default function Usulan() {
 
     try {
       editingId ? await updateUsulan(editingId, payload) : await createUsulan(payload)
-      notify(editingId ? 'Perbaikan usulan berhasil disimpan.' : 'Usulan berhasil dikirim.', 'success')
-      setModalOpen(false)
+      notify(editingId && detailUsulan?.status !== 'DRAFT' ? 'Perbaikan usulan berhasil disimpan.' : 'Usulan berhasil dikirim untuk dinilai.', 'success')
       setCatatanPerbaikan('')
       setDetailUsulan(null)
       setRefreshKey((k) => k + 1)
       setSelectedYear(tahun)
       setPage(1)
-      if (isCreatePage) navigate('/satker/usulan')
+      if (isFormPage) navigate('/satker/usulan')
     } catch (err: unknown) {
       notify(axios.isAxiosError(err) ? err.response?.data?.message || 'Gagal menyimpan' : 'Terjadi kesalahan', 'error')
     } finally { setSaving(false) }
+  }
+
+  const handleSaveDraft = async () => {
+    setSavingDraft(true)
+    const payload: Record<string, unknown> = {
+      judul: namaInovasi.trim(),
+      deskripsi_inovasi: deskripsiInovasi.trim(),
+      jenis_inovasi: jenisInovasi[0] || '',
+      jenis_inovasi_pilihan: jenisInovasi,
+      jenis_inovasi_lainnya: '',
+      kriteria_inovasi: normalizeKriteriaInovasi(kriteria),
+      link_data_dukung: linkDataDukung.trim(),
+      pic_nama: picContacts[0]?.nama || '',
+      pic_telp: picContacts[0]?.no_whatsapp || '',
+      pic_penanggung_jawab: picContacts,
+    }
+    if (tahun.trim() && /^\d+$/.test(tahun)) payload.tahun = parseInt(tahun, 10)
+    if (step === 2) {
+      payload.assessment_answers = Object.values(answers).map((answer) => ({
+        question_id: parseInt(answer.question_id, 10) || 0,
+        jawaban_boolean: answer.jawaban_boolean,
+        catatan_string: answer.catatan_string,
+        link: answer.link || '',
+        custom_values: answer.custom_values || {},
+      }))
+    }
+
+    try {
+      if (editingId && detailUsulan?.status === 'DRAFT') await updateUsulanDraft(editingId, payload)
+      else await createUsulanDraft(payload)
+      notify('Draft usulan berhasil disimpan. Anda dapat melanjutkannya dari daftar usulan.', 'success')
+      setDetailUsulan(null)
+      setRefreshKey((key) => key + 1)
+      setSelectedYear(tahun.trim() && /^\d+$/.test(tahun) ? tahun : new Date().getFullYear().toString())
+      setPage(1)
+      if (isFormPage) navigate('/satker/usulan')
+    } catch (err: unknown) {
+      notify(axios.isAxiosError(err) ? err.response?.data?.message || 'Gagal menyimpan draft.' : 'Gagal menyimpan draft.', 'error')
+    } finally {
+      setSavingDraft(false)
+    }
   }
 
   const handleDelete = async () => {
@@ -377,15 +435,14 @@ export default function Usulan() {
   })
 
   const closeForm = () => {
-    setModalOpen(false)
     setCatatanPerbaikan('')
     setDetailUsulan(null)
-    if (isCreatePage) navigate('/satker/usulan')
+    if (isFormPage) navigate('/satker/usulan')
   }
 
   return (
     <div className="space-y-6">
-      {!isCreatePage && <>
+      {!isFormPage && <>
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h2 className="text-lg font-semibold text-gray-800">Usulan Inovasi</h2>
@@ -446,7 +503,7 @@ export default function Usulan() {
                       <button onClick={() => navigate(`/satker/usulan/${item.id}`)} className="rounded-lg p-2 text-gray-400 transition hover:bg-blue-50 hover:text-blue-600" title="Detail">
                         <svg className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M2.036 12.322a1.012 1.012 0 010-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178z" /><path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
                       </button>
-                      {item.status === 'PERBAIKAN' && (
+                      {['DRAFT', 'PERBAIKAN'].includes(item.status) && (
                         <>
                           <button onClick={() => openEdit(item)} className="rounded-lg p-2 text-gray-400 transition hover:bg-blue-50 hover:text-blue-600" title="Edit">
                             <svg className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" /></svg>
@@ -481,16 +538,16 @@ export default function Usulan() {
       )}
       </>}
 
-      {(modalOpen || isCreatePage) && (
-        <div className={isCreatePage ? 'mx-auto w-full max-w-5xl' : 'fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4'}>
-          <div className={isCreatePage ? 'overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm' : 'flex max-h-[90vh] w-full max-w-4xl flex-col rounded-xl bg-white shadow-xl'}>
+      {isFormPage && (
+        <div className="mx-auto w-full max-w-5xl">
+          <div className="overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm">
             <div className="flex items-center justify-between border-b px-6 py-4">
               <div>
                 <h2 className="text-lg font-semibold text-gray-800">{editingId ? 'Edit Usulan' : 'Tambah Usulan'}</h2>
-                {isCreatePage && <p className="mt-1 text-sm text-gray-500">Lengkapi data inovasi dan self assessment.</p>}
+                <p className="mt-1 text-sm text-gray-500">Lengkapi data inovasi dan self assessment.</p>
               </div>
-              <button onClick={() => isCreatePage && step === 2 ? setStep(1) : closeForm()} className={isCreatePage ? 'rounded-lg border border-gray-200 px-3 py-2 text-sm font-medium text-gray-600 transition hover:bg-gray-50' : 'rounded-lg p-1 text-gray-400 hover:bg-gray-100'}>
-                {isCreatePage ? step === 2 ? 'Kembali ke Data Usulan' : 'Kembali ke daftar' : <svg className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>}
+              <button onClick={() => isFormPage && step === 2 ? setStep(1) : closeForm()} className="rounded-lg border border-gray-200 px-3 py-2 text-sm font-medium text-gray-600 transition hover:bg-gray-50">
+                {step === 2 ? 'Kembali ke Data Usulan' : 'Kembali ke daftar'}
               </button>
             </div>
             <div className="flex border-b bg-gray-50/50 px-6 py-3">
@@ -502,7 +559,7 @@ export default function Usulan() {
                 </div>
               ))}
             </div>
-            <div className={isCreatePage ? 'px-6 py-5' : 'flex-1 overflow-y-auto px-6 py-5'}>
+            <div className="px-6 py-5">
               {editingId && catatanPerbaikan && (
                 <div className="mb-4 flex items-start gap-3 rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
                   <svg className="mt-0.5 h-5 w-5 shrink-0" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M12 9v2m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
@@ -523,7 +580,7 @@ export default function Usulan() {
                     <div className="mt-1 flex justify-between text-xs"><span className={formErrors.deskripsiInovasi ? 'text-red-600' : 'text-gray-500'}>{formErrors.deskripsiInovasi || 'Ceritakan secara ringkas apa inovasinya dan manfaatnya.'}</span><span className="text-gray-400">{deskripsiInovasi.length}/1000</span></div>
                   </div>
                   <div>
-                    <label className="mb-1 block text-sm font-medium text-gray-700">Nama Unit</label>
+                    <label className="mb-1 block text-sm font-medium text-gray-700">Unit Kerja</label>
                     <input type="text" value={userSatker} readOnly className="w-full rounded-lg border border-gray-200 bg-gray-50 px-4 py-2.5 text-sm text-gray-500" />
                   </div>
                   <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
@@ -626,8 +683,12 @@ export default function Usulan() {
               )}
             </div>
             <div className="flex items-center justify-between border-t px-6 py-4">
-              <div>{step === 2 && (<button onClick={() => setStep(1)} className="rounded-lg border px-4 py-2 text-sm font-medium text-gray-600 transition hover:bg-gray-50">Kembali</button>)}</div>
-              <button onClick={handleSubmit} disabled={saving || (step === 2 && questionsLoading)} className="rounded-lg bg-blue-600 px-5 py-2 text-sm font-medium text-white transition hover:bg-blue-700 disabled:opacity-60">{saving ? 'Menyimpan...' : step === 1 ? 'Selanjutnya' : 'Submit Usulan'}</button>
+              <div className="flex items-center gap-2">
+                {step === 2 && (!editingId || detailUsulan?.status === 'DRAFT') && <button onClick={handleSaveDraft} disabled={saving || savingDraft} className="rounded-lg border border-blue-200 px-4 py-2 text-sm font-medium text-blue-700 transition hover:bg-blue-50 disabled:opacity-60">{savingDraft ? 'Menyimpan Draft...' : 'Simpan Draft'}</button>}
+                {step === 2 && editingId && detailUsulan?.status !== 'DRAFT' && <button onClick={() => setStep(1)} disabled={saving || savingDraft} className="rounded-lg border px-4 py-2 text-sm font-medium text-gray-600 transition hover:bg-gray-50 disabled:opacity-60">Kembali</button>}
+                {step === 1 && (!editingId || detailUsulan?.status === 'DRAFT') && <button onClick={handleSaveDraft} disabled={saving || savingDraft} className="rounded-lg border border-blue-200 px-4 py-2 text-sm font-medium text-blue-700 transition hover:bg-blue-50 disabled:opacity-60">{savingDraft ? 'Menyimpan Draft...' : 'Simpan Draft'}</button>}
+              </div>
+              <button onClick={handleSubmit} disabled={saving || savingDraft || (step === 2 && questionsLoading)} className="rounded-lg bg-blue-600 px-5 py-2 text-sm font-medium text-white transition hover:bg-blue-700 disabled:opacity-60">{saving ? 'Menyimpan...' : step === 1 ? 'Selanjutnya' : 'Submit Usulan'}</button>
             </div>
           </div>
         </div>

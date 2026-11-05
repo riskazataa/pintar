@@ -16,6 +16,7 @@ export interface StatusPresentation {
 }
 
 const STYLES: Record<string, string> = {
+  Draft: 'border-slate-200 bg-slate-100 text-slate-600',
   'Sedang Direview': 'border-amber-200 bg-amber-50 text-amber-700',
   'Menunggu Tanda Tangan': 'border-blue-200 bg-blue-50 text-blue-700',
   Lolos: 'border-emerald-200 bg-emerald-50 text-emerald-700',
@@ -37,6 +38,7 @@ export function getStatusPresentation(item: StatusPresentationInput, tahap = 1):
   if (outcome === 'TIDAK_LOLOS') return { label: 'Tidak Lolos', className: STYLES['Tidak Lolos'] }
 
   const status = item.status || ''
+  if (status === 'DRAFT') return { label: 'Draft', className: STYLES.Draft }
   if (status === 'PERBAIKAN') return { label: 'Perlu Perbaikan', className: STYLES['Perlu Perbaikan'] }
   if (status === 'REJECTED') return { label: 'Tidak Lolos', className: STYLES['Tidak Lolos'] }
   const assigned = tahap === 2 ? item.penilai_tahap2 ?? item.penilai ?? item.assigned_users : item.penilai ?? item.assigned_users

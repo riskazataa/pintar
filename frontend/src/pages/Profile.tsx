@@ -2,6 +2,7 @@ import { useEffect, useState, type FormEvent } from 'react'
 import { useNavigate } from 'react-router-dom'
 import axios from 'axios'
 import { getMyProfile, logout, updateMyProfile, type ProfileData } from '../services/auth.service'
+import { useNotifications } from '../components/NotificationProvider'
 
 const roleLabels: Record<string, string> = {
   SUPER_ADMIN: 'Super Admin',
@@ -11,6 +12,7 @@ const roleLabels: Record<string, string> = {
 
 export default function Profile() {
   const navigate = useNavigate()
+  const { notify } = useNotifications()
   const [profile, setProfile] = useState<ProfileData | null>(null)
   const [name, setName] = useState('')
   const [email, setEmail] = useState('')
@@ -82,6 +84,7 @@ export default function Profile() {
       localStorage.setItem('user', JSON.stringify({ ...storedUser, ...data }))
       window.dispatchEvent(new Event('profile-updated'))
       setSuccess('Profil berhasil diperbarui.')
+      notify('Profil berhasil diperbarui.', 'success')
     } catch (err: unknown) {
       setError(axios.isAxiosError(err) ? err.response?.data?.message || 'Gagal menyimpan perubahan profil.' : 'Gagal menyimpan perubahan profil.')
     } finally {
@@ -132,7 +135,7 @@ export default function Profile() {
             <input required type="email" maxLength={254} value={email} onChange={(event) => setEmail(event.target.value)} className="mt-2 h-11 w-full rounded-xl border border-gray-300 px-3.5 font-normal outline-none transition focus:border-blue-500 focus:ring-4 focus:ring-blue-100" autoComplete="email" />
           </label>
           <label className="block text-sm font-medium text-gray-700">Nomor HP
-            <input type="tel" maxLength={30} value={phone} onChange={(event) => setPhone(event.target.value)} placeholder="Contoh: 081234567890" className="mt-2 h-11 w-full rounded-xl border border-gray-300 px-3.5 font-normal outline-none transition focus:border-blue-500 focus:ring-4 focus:ring-blue-100" autoComplete="tel" />
+            <input type="tel" inputMode="numeric" pattern="[0-9]*" maxLength={30} value={phone} onChange={(event) => setPhone(event.target.value.replace(/\D/g, ''))} placeholder="Contoh: 081234567890" className="mt-2 h-11 w-full rounded-xl border border-gray-300 px-3.5 font-normal outline-none transition focus:border-blue-500 focus:ring-4 focus:ring-blue-100" autoComplete="tel" />
           </label>
           <label className="block text-sm font-medium text-gray-700">Role akun
             <input readOnly value={roleLabels[profile?.role || ''] || profile?.role || '—'} className="mt-2 h-11 w-full rounded-xl border border-gray-200 bg-gray-50 px-3.5 font-normal text-gray-500" />

@@ -242,6 +242,11 @@ export default function Tahap1DetailEvaluasi({ tahap = 1, onUpdated }: { tahap?:
             </div>
 
             <div>
+              <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1">Deskripsi Singkat Inovasi</p>
+              <p className="whitespace-pre-wrap text-sm font-medium text-gray-900">{data.deskripsi_inovasi || '-'}</p>
+            </div>
+
+            <div>
               <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-2">Kriteria Inovasi</p>
               <div className="flex flex-wrap gap-2">
                 {normalizeKriteriaInovasi(data.kriteria_inovasi).map((k: string, i: number) => (
