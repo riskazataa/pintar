@@ -446,8 +446,8 @@ export class InovasiService {
   ) {
     const existing = await this.prisma.inovasi.findUnique({ where: { id } });
     if (!existing) throw new NotFoundException('Inovasi tidak ditemukan');
-    if (existing.status !== StatusInovasi.DRAFT) {
-      throw new ForbiddenException('Hanya draft yang dapat diperbarui sebagai draft');
+    if (existing.status !== StatusInovasi.DRAFT && existing.status !== StatusInovasi.PERBAIKAN) {
+      throw new ForbiddenException('Hanya draft atau usulan yang perlu perbaikan yang dapat disimpan sebagai draft');
     }
     if (user.role !== 'UNIT' || existing.user_id !== user.sub || existing.satker_id !== user.satker_id) {
       throw new ForbiddenException('Anda tidak memiliki akses ke draft ini');

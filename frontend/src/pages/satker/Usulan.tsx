@@ -181,6 +181,7 @@ export default function Usulan() {
   const [savingDraft, setSavingDraft] = useState(false)
   const [catatanPerbaikan, setCatatanPerbaikan] = useState('')
   const [detailUsulan, setDetailUsulan] = useState<any>(null)
+  const canSaveDraft = !editingId || ['DRAFT', 'PERBAIKAN'].includes(detailUsulan?.status)
 
   const fetchList = useCallback(async () => {
     if (!selectedYear) {
@@ -390,7 +391,7 @@ export default function Usulan() {
     }
 
     try {
-      if (editingId && detailUsulan?.status === 'DRAFT') await updateUsulanDraft(editingId, payload)
+      if (editingId && ['DRAFT', 'PERBAIKAN'].includes(detailUsulan?.status)) await updateUsulanDraft(editingId, payload)
       else await createUsulanDraft(payload)
       notify('Draft usulan berhasil disimpan. Anda dapat melanjutkannya dari daftar usulan.', 'success')
       setDetailUsulan(null)
@@ -684,9 +685,9 @@ export default function Usulan() {
             </div>
             <div className="flex items-center justify-between border-t px-6 py-4">
               <div className="flex items-center gap-2">
-                {step === 2 && (!editingId || detailUsulan?.status === 'DRAFT') && <button onClick={handleSaveDraft} disabled={saving || savingDraft} className="rounded-lg border border-blue-200 px-4 py-2 text-sm font-medium text-blue-700 transition hover:bg-blue-50 disabled:opacity-60">{savingDraft ? 'Menyimpan Draft...' : 'Simpan Draft'}</button>}
+                {step === 2 && canSaveDraft && <button onClick={handleSaveDraft} disabled={saving || savingDraft} className="rounded-lg border border-blue-200 px-4 py-2 text-sm font-medium text-blue-700 transition hover:bg-blue-50 disabled:opacity-60">{savingDraft ? 'Menyimpan Draft...' : 'Simpan Draft'}</button>}
                 {step === 2 && editingId && detailUsulan?.status !== 'DRAFT' && <button onClick={() => setStep(1)} disabled={saving || savingDraft} className="rounded-lg border px-4 py-2 text-sm font-medium text-gray-600 transition hover:bg-gray-50 disabled:opacity-60">Kembali</button>}
-                {step === 1 && (!editingId || detailUsulan?.status === 'DRAFT') && <button onClick={handleSaveDraft} disabled={saving || savingDraft} className="rounded-lg border border-blue-200 px-4 py-2 text-sm font-medium text-blue-700 transition hover:bg-blue-50 disabled:opacity-60">{savingDraft ? 'Menyimpan Draft...' : 'Simpan Draft'}</button>}
+                {step === 1 && canSaveDraft && <button onClick={handleSaveDraft} disabled={saving || savingDraft} className="rounded-lg border border-blue-200 px-4 py-2 text-sm font-medium text-blue-700 transition hover:bg-blue-50 disabled:opacity-60">{savingDraft ? 'Menyimpan Draft...' : 'Simpan Draft'}</button>}
               </div>
               <button onClick={handleSubmit} disabled={saving || savingDraft || (step === 2 && questionsLoading)} className="rounded-lg bg-blue-600 px-5 py-2 text-sm font-medium text-white transition hover:bg-blue-700 disabled:opacity-60">{saving ? 'Menyimpan...' : step === 1 ? 'Selanjutnya' : 'Submit Usulan'}</button>
             </div>
