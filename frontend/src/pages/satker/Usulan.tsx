@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useState, useCallback, useRef } from 'react'
 import { useLocation, useNavigate, useParams } from 'react-router-dom'
 import axios from 'axios'
 import {
@@ -132,7 +132,7 @@ function buildTreeStructure(questions: any[]) {
 }
 
 export default function Usulan() {
-  const { notify } = useNotifications()
+  const { notify, confirm } = useNotifications()
   const navigate = useNavigate()
   const location = useLocation()
   const isCreatePage = location.pathname === '/satker/usulan/tambah'
@@ -178,8 +178,11 @@ export default function Usulan() {
   const [questionTitle, setQuestionTitle] = useState('Kriteria Penilaian')
   const [answers, setAnswers] = useState<Record<string, AnswerEntry>>({})
   const [questionsLoading, setQuestionsLoading] = useState(false)
+  const hasAssessmentQuestions = questions.some((question) => !question.is_header)
   const [saving, setSaving] = useState(false)
   const [savingDraft, setSavingDraft] = useState(false)
+  const [confirmingSubmit, setConfirmingSubmit] = useState(false)
+  const confirmSubmitPending = useRef(false)
   const [catatanPerbaikan, setCatatanPerbaikan] = useState('')
   const [detailUsulan, setDetailUsulan] = useState<any>(null)
   const [submissionsLocked, setSubmissionsLocked] = useState(false)
@@ -243,6 +246,7 @@ export default function Usulan() {
     setQuestionsLoading(true)
     try {
       const [{ data: qData }, { data: template }] = await Promise.all([getAssessmentQuestions(1), getBAColumns(1)])
+      if (!Array.isArray(template?.columns)) throw new Error('Template Self Assessment tidak valid.')
       let flatQuestions: AssessmentQuestion[] = []
       const rawList = Array.isArray(qData) ? qData : qData.data ?? []
 
@@ -256,7 +260,7 @@ export default function Usulan() {
       })
 
       setQuestions(flatQuestions)
-      setAssessmentColumns(template.columns ?? [])
+      setAssessmentColumns(template.columns)
       setQuestionTitle(template.questionTitle || 'Kriteria Penilaian')
       
       const existingAnswers = detailUsulan?.assessment_answers || []
@@ -278,6 +282,7 @@ export default function Usulan() {
       setAnswers(init)
     } catch { 
       setQuestions([]) 
+      setAnswers({})
     } finally { 
       setQuestionsLoading(false) 
     }
@@ -364,12 +369,13 @@ export default function Usulan() {
       if (noWhatsappErrors.some(Boolean)) errors.noWhatsapp = noWhatsappErrors
       setFormErrors(errors)
       if (Object.keys(errors).length) { notify('Periksa kembali field yang ditandai merah.', 'warning'); return }
-      if (!questions.length) await loadQuestions()
+      if (!hasAssessmentQuestions) await loadQuestions()
       setStep(2)
       return
     }
 
-    setSaving(true)
+    if (questionsLoading || !hasAssessmentQuestions) return
+
     const missingColumn = assessmentColumns.find((column) => column.required && column.type !== 'readonly' && Object.values(answers).some((answer) => {
       const question = questions.find((q) => String(q.id) === answer.question_id)
       if (question?.is_header || question?.satker_lock_mode === 'ROW') return false
@@ -379,7 +385,19 @@ export default function Usulan() {
       if (column.type === 'checkbox') return value !== true
       return value === undefined || value === null || (typeof value === 'string' && !value.trim())
     }))
-    if (missingColumn) { setShowAssessmentErrors(true); notify('Kolom "' + missingColumn.title + '" wajib diisi pada pertanyaan yang masih kosong.', 'warning'); setSaving(false); return }
+    if (missingColumn) { setShowAssessmentErrors(true); notify('Kolom "' + missingColumn.title + '" wajib diisi pada pertanyaan yang masih kosong.', 'warning'); return }
+    if (confirmSubmitPending.current) return
+    confirmSubmitPending.current = true
+    setConfirmingSubmit(true)
+    const shouldSubmit = await confirm(
+      editingId ? 'Kirim perbaikan usulan ini untuk dinilai?' : 'Kirim usulan ini untuk dinilai?',
+      { title: 'Konfirmasi pengiriman usulan', confirmLabel: 'Ya, submit usulan' },
+    )
+    confirmSubmitPending.current = false
+    setConfirmingSubmit(false)
+    if (!shouldSubmit) return
+
+    setSaving(true)
     const payload = {
       judul: namaInovasi, deskripsi_inovasi: deskripsiInovasi.trim(), tahun: parseInt(tahun, 10), jenis_inovasi: jenisInovasi[0], jenis_inovasi_pilihan: jenisInovasi, jenis_inovasi_lainnya: '', kriteria_inovasi: normalizeKriteriaInovasi(kriteria), link_data_dukung: linkDataDukung, pic_nama: picContacts[0]?.nama || '', pic_telp: picContacts[0]?.no_whatsapp || '', pic_penanggung_jawab: picContacts,
       assessment_answers: Object.values(answers).map((answer) => ({
@@ -424,7 +442,7 @@ export default function Usulan() {
       pic_penanggung_jawab: picContacts,
     }
     if (tahun.trim() && /^\d+$/.test(tahun)) payload.tahun = parseInt(tahun, 10)
-    if (step === 2) {
+    if (step === 2 && !questionsLoading && hasAssessmentQuestions) {
       payload.assessment_answers = Object.values(answers).map((answer) => ({
         question_id: parseInt(answer.question_id, 10) || 0,
         jawaban_boolean: answer.jawaban_boolean,
@@ -706,8 +724,11 @@ export default function Usulan() {
                   <div><p className="text-sm font-medium text-gray-700">Self assessment mengikuti template Tahap 1 dari Management BA.</p><p className="mt-1 text-sm text-gray-500">Isi setiap kolom sesuai jenis dan aturan yang ditentukan pada template.</p></div>
                   {questionsLoading ? (
                     <div className="animate-pulse space-y-4">{[1, 2, 3].map((i) => (<div key={i} className="h-12 w-full rounded bg-gray-100" />))}</div>
-                  ) : questions.length === 0 ? (
-                    <p className="text-sm text-gray-400">Tidak ada pertanyaan assessment.</p>
+                  ) : !hasAssessmentQuestions ? (
+                    <div role="alert" className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
+                      <p>Template Self Assessment belum tersedia. Muat ulang template sebelum mengirim usulan.</p>
+                      <button type="button" onClick={loadQuestions} disabled={savingDraft} className="mt-2 font-semibold underline">Muat ulang template</button>
+                    </div>
                   ) : (
                     <div className="overflow-x-auto overscroll-x-contain rounded-xl border border-gray-200 bg-white">
                       <BAAnswerGrid
@@ -730,11 +751,12 @@ export default function Usulan() {
             </div>
             <div className="flex items-center justify-between border-t px-6 py-4">
               <div className="flex items-center gap-2">
-                {step === 2 && canSaveDraft && <button onClick={handleSaveDraft} disabled={saving || savingDraft || (!editingId && (submissionLockLoading || submissionsLocked))} className="rounded-lg border border-blue-200 px-4 py-2 text-sm font-medium text-blue-700 transition hover:bg-blue-50 disabled:opacity-60">{savingDraft ? 'Menyimpan Draft...' : 'Simpan Draft'}</button>}
                 {step === 2 && editingId && detailUsulan?.status !== 'DRAFT' && <button onClick={() => setStep(1)} disabled={saving || savingDraft} className="rounded-lg border px-4 py-2 text-sm font-medium text-gray-600 transition hover:bg-gray-50 disabled:opacity-60">Kembali</button>}
-                {step === 1 && canSaveDraft && <button onClick={handleSaveDraft} disabled={saving || savingDraft || (!editingId && (submissionLockLoading || submissionsLocked))} className="rounded-lg border border-blue-200 px-4 py-2 text-sm font-medium text-blue-700 transition hover:bg-blue-50 disabled:opacity-60">{savingDraft ? 'Menyimpan Draft...' : 'Simpan Draft'}</button>}
               </div>
-              <button onClick={handleSubmit} disabled={saving || savingDraft || (step === 2 && questionsLoading) || (!editingId && (submissionLockLoading || submissionsLocked))} className="rounded-lg bg-blue-600 px-5 py-2 text-sm font-medium text-white transition hover:bg-blue-700 disabled:opacity-60">{saving ? 'Menyimpan...' : step === 1 ? 'Selanjutnya' : 'Submit Usulan'}</button>
+              <div className="flex items-center gap-2">
+                {canSaveDraft && <button onClick={handleSaveDraft} disabled={saving || savingDraft || confirmingSubmit || (!editingId && (submissionLockLoading || submissionsLocked))} className="rounded-lg border border-blue-200 px-4 py-2 text-sm font-medium text-blue-700 transition hover:bg-blue-50 disabled:opacity-60">{savingDraft ? 'Menyimpan Draft...' : 'Simpan Draft'}</button>}
+                <button onClick={handleSubmit} disabled={saving || savingDraft || confirmingSubmit || questionsLoading || (step === 2 && !hasAssessmentQuestions) || (!editingId && (submissionLockLoading || submissionsLocked))} className="rounded-lg bg-blue-600 px-5 py-2 text-sm font-medium text-white transition hover:bg-blue-700 disabled:opacity-60">{saving ? 'Menyimpan...' : step === 1 ? 'Selanjutnya' : 'Submit Usulan'}</button>
+              </div>
             </div>
           </div>
         </div>

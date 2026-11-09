@@ -103,14 +103,15 @@ export function NotificationProvider({ children }: { children: ReactNode }) {
         })}
       </div>
 
-      {dialog && <div className="fixed inset-0 z-[110] flex items-center justify-center bg-slate-950/40 p-4 backdrop-blur-[2px]" onMouseDown={(event) => { if (event.target === event.currentTarget) finishConfirm(false) }}>
-        <section role="alertdialog" aria-modal="true" aria-labelledby="app-confirm-title" aria-describedby="app-confirm-message" className="w-full max-w-md overflow-hidden rounded-2xl border border-white/70 bg-white shadow-2xl shadow-slate-950/20">
-          <div className="p-6">
-            <div className={`mb-4 flex h-11 w-11 items-center justify-center rounded-xl ${dialog.destructive ? 'bg-rose-50 text-rose-600' : 'bg-violet-50 text-violet-600'}`}><svg className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth={1.8} viewBox="0 0 24 24">{dialog.destructive ? <><path strokeLinecap="round" strokeLinejoin="round" d="M12 9v4m0 4h.01" /><path strokeLinecap="round" strokeLinejoin="round" d="M10.3 3.9 2.6 17.2A1.8 1.8 0 0 0 4.2 20h15.6a1.8 1.8 0 0 0 1.6-2.8L13.7 3.9a2 2 0 0 0-3.4 0Z" /></> : <path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75 11.25 15 15 9.75m6 2.25a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" />}</svg></div>
+      {dialog && <div className="fixed inset-0 z-[110] flex items-center justify-center bg-slate-950/40 p-4" onMouseDown={(event) => { if (event.target === event.currentTarget) finishConfirm(false) }}>
+        <section role="alertdialog" aria-modal="true" aria-labelledby="app-confirm-title" aria-describedby="app-confirm-message" className="relative w-full max-w-sm overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-xl shadow-slate-950/20">
+          <button type="button" onClick={() => finishConfirm(false)} aria-label="Tutup konfirmasi" className="absolute right-3 top-3 rounded-lg p-1 text-slate-400 transition hover:bg-slate-100 hover:text-slate-700"><svg className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth={1.8} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="m6 6 12 12M18 6 6 18" /></svg></button>
+          <div className="px-6 pb-5 pt-7 text-center">
+            <div className={`mx-auto mb-3 flex h-10 w-10 items-center justify-center rounded-xl ${dialog.destructive ? 'bg-rose-50 text-rose-600' : 'bg-violet-50 text-violet-600'}`}><svg className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth={1.8} viewBox="0 0 24 24">{dialog.destructive ? <><path strokeLinecap="round" strokeLinejoin="round" d="M12 9v4m0 4h.01" /><path strokeLinecap="round" strokeLinejoin="round" d="M10.3 3.9 2.6 17.2A1.8 1.8 0 0 0 4.2 20h15.6a1.8 1.8 0 0 0 1.6-2.8L13.7 3.9a2 2 0 0 0-3.4 0Z" /></> : <path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75 11.25 15 15 9.75m6 2.25a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" />}</svg></div>
             <h2 id="app-confirm-title" className="text-lg font-semibold text-slate-900">{dialog.title || 'Konfirmasi tindakan'}</h2>
             <p id="app-confirm-message" className="mt-2 text-sm leading-6 text-slate-600">{dialog.message}</p>
           </div>
-          <div className="flex justify-end gap-2 border-t border-slate-100 bg-slate-50/70 px-6 py-4">
+          <div className="flex justify-center gap-2 border-t border-slate-100 bg-slate-50/70 px-5 py-3">
             <button type="button" onClick={() => finishConfirm(false)} className="h-10 rounded-xl border border-slate-200 bg-white px-4 text-sm font-medium text-slate-600 transition hover:bg-slate-100">{dialog.cancelLabel || 'Batal'}</button>
             <button type="button" autoFocus onClick={() => finishConfirm(true)} className={`h-10 rounded-xl px-4 text-sm font-semibold text-white transition ${dialog.destructive ? 'bg-rose-600 hover:bg-rose-700' : 'bg-violet-600 hover:bg-violet-700'}`}>{dialog.confirmLabel || 'Lanjutkan'}</button>
           </div>

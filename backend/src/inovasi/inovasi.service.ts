@@ -236,10 +236,27 @@ export class InovasiService {
       };
     }
     const allSignatures = inovasi.usulan_signatures;
-    inovasi.assessment_answers = this.orderAssessmentAnswers(this.getStage1Answers(
+    const savedAnswers = this.getStage1Answers(
       inovasi.assessment_answers,
       view === 'evaluation' || (view !== 'self-assessment' && user?.role !== 'UNIT'),
-    ));
+    );
+    const showBlankTemplate = view === 'self-assessment'
+      && inovasi.status !== StatusInovasi.DRAFT
+      && savedAnswers.length === 0;
+    const questions = showBlankTemplate ? await this.getActiveSelfAssessmentQuestions() : [];
+    const selfAssessmentTemplateOnly = showBlankTemplate && questions.some((question) => !question.is_header);
+    const answers = selfAssessmentTemplateOnly ? questions.map((question) => ({
+      id: -question.id,
+      inovasi_id: id,
+      question_id: question.id,
+      tahap: 1,
+      source: 'SATKER',
+      jawaban_boolean: false,
+      catatan_string: null,
+      link: null,
+      custom_values: null,
+      question,
+    })) : savedAnswers;
     inovasi.usulan_signatures = allSignatures.filter((s) => s.tahap === 1);
     // Format assigned_users from penilai relation
     const assignedUsers = inovasi.penilai.map((p) => ({
@@ -262,12 +279,38 @@ export class InovasiService {
 
     return {
       ...inovasi,
+      assessment_answers: this.orderAssessmentAnswers(answers),
+      self_assessment_template_only: selfAssessmentTemplateOnly,
       hasil_penilaian: hasilPenilaian(inovasi.penilai, inovasi.usulan_signatures),
       hasil_penilaian_tahap1: hasilPenilaian(inovasi.penilai, allSignatures, 1),
       hasil_penilaian_tahap2: hasilPenilaian(inovasi.penilai_tahap2, allSignatures, 2),
       assigned_users: assignedUsers,
       signatures: signatures,
     };
+  }
+
+  private getActiveSelfAssessmentQuestions() {
+    return this.prisma.assessmentQuestion.findMany({
+      where: {
+        tahap: 1,
+        is_active: true,
+        OR: [{ parent_id: null }, { parent: { tahap: 1, is_active: true, parent_id: null } }],
+      },
+    });
+  }
+
+  private async validateSelfAssessmentSubmission(answers: { question_id: number }[]) {
+    if (!answers.length) {
+      throw new BadRequestException('Self Assessment belum dimuat. Muat ulang formulir sebelum mengirim usulan.');
+    }
+    const questions = await this.getActiveSelfAssessmentQuestions();
+    const submittedIds = new Set(answers.map((answer) => answer.question_id));
+    if (submittedIds.size !== answers.length
+      || submittedIds.size !== questions.length
+      || !questions.some((question) => !question.is_header)
+      || questions.some((question) => !submittedIds.has(question.id))) {
+      throw new BadRequestException('Template Self Assessment belum lengkap atau sudah berubah. Muat ulang formulir sebelum mengirim usulan.');
+    }
   }
 
   private async validateQuestionStage(answers: { question_id: number }[], tahap: number) {
@@ -487,21 +530,26 @@ export class InovasiService {
 
     return this.prisma.$transaction(async (tx) => {
       await tx.inovasi.update({ where: { id }, data });
-      if (dto.assessment_answers !== undefined) {
-        await tx.assessmentAnswer.deleteMany({ where: { inovasi_id: id, tahap: 1, source: 'SATKER' } });
-        if (assessmentAnswers.length) {
-          await tx.assessmentAnswer.createMany({
-            data: assessmentAnswers.map((answer) => ({
-              inovasi_id: id,
-              question_id: answer.question_id,
-              source: 'SATKER',
-              jawaban_boolean: answer.jawaban_boolean,
-              catatan_string: answer.catatan_string,
-              link: answer.link,
-              custom_values: answer.custom_values,
-            })),
-          });
-        }
+      if (assessmentAnswers.length > 0) {
+        await tx.assessmentAnswer.deleteMany({
+          where: {
+            inovasi_id: id,
+            tahap: 1,
+            source: 'SATKER',
+            question_id: { in: assessmentAnswers.map((answer) => answer.question_id) },
+          },
+        });
+        await tx.assessmentAnswer.createMany({
+          data: assessmentAnswers.map((answer) => ({
+            inovasi_id: id,
+            question_id: answer.question_id,
+            source: 'SATKER',
+            jawaban_boolean: answer.jawaban_boolean,
+            catatan_string: answer.catatan_string,
+            link: answer.link,
+            custom_values: answer.custom_values,
+          })),
+        });
       }
       return tx.inovasi.findUnique({ where: { id }, include: this.includeConfig });
     });
@@ -513,7 +561,7 @@ export class InovasiService {
   ) {
     if (user.role === 'UNIT') await this.assertSubmissionIsUnlocked();
     const assessment_answers = dto.assessment_answers;
-    await this.validateQuestionStage(assessment_answers ?? [], 1);
+    await this.validateSelfAssessmentSubmission(assessment_answers ?? []);
     if (user.role === 'UNIT') await this.enforceSatkerLocks(assessment_answers ?? [], undefined);
     const inovasiData = {
       judul: dto.judul,
@@ -587,9 +635,9 @@ export class InovasiService {
       throw new ForbiddenException('Anda tidak memiliki akses ke inovasi ini');
     }
 
-    const assessment_answers = (dto as any).assessment_answers;
+    const assessment_answers = dto.assessment_answers;
+    await this.validateSelfAssessmentSubmission(assessment_answers ?? []);
     if (user.role === 'UNIT') await this.enforceSatkerLocks(assessment_answers ?? [], id);
-    await this.validateQuestionStage(assessment_answers ?? [], 1);
     const inovasiData: Record<string, any> = {};
     if (dto.judul !== undefined) inovasiData.judul = dto.judul;
     if (dto.deskripsi_inovasi !== undefined) inovasiData.deskripsi_inovasi = dto.deskripsi_inovasi;
@@ -769,7 +817,7 @@ export class InovasiService {
     user: { sub: number; role: string; satker_id?: number | null },
   ) {
     if (user.role !== 'UNIT') return this.updateAssessmentByPenilai(id, { answers: dto.assessment_answers }, user, 1);
-    await this.validateQuestionStage(dto.assessment_answers, 1);
+    await this.validateSelfAssessmentSubmission(dto.assessment_answers);
     await this.enforceSatkerLocks(dto.assessment_answers, id);
     const existing = await this.prisma.inovasi.findUnique({
       where: { id },

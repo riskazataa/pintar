@@ -68,7 +68,7 @@ export default function Tahap1Usulan({ tahap = 1 }: { tahap?: number }) {
   const [satkerOptions, setSatkerOptions] = useState<SatkerOption[]>([])
   const [page, setPage] = useState(1)
   const [sortOrder, setSortOrder] = useState<TableSortOrder>('desc')
-  const [selectedYear, setSelectedYear] = useState('')
+  const [selectedYear, setSelectedYear] = useState(() => String(new Date().getFullYear()))
 
   const fetchList = useCallback(async () => {
     if (!selectedYear) {
