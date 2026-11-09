@@ -1,12 +1,12 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" fill="none">
   <defs>
     <linearGradient id="brand" x1="8" y1="7" x2="57" y2="58" gradientUnits="userSpaceOnUse">
-      <stop stop-color="#2563EB"/>
-      <stop offset="1" stop-color="#6D4AFF"/>
+      <stop stop-color="#007C7B"/>
+      <stop offset="1" stop-color="#13AF9A"/>
     </linearGradient>
     <linearGradient id="spark" x1="43" y1="8" x2="58" y2="24" gradientUnits="userSpaceOnUse">
-      <stop stop-color="#A5F3FC"/>
-      <stop offset="1" stop-color="#67E8F9"/>
+      <stop stop-color="#C3EAE6"/>
+      <stop offset="1" stop-color="#0AB2B8"/>
     </linearGradient>
   </defs>
   <rect x="2" y="2" width="60" height="60" rx="19" fill="url(#brand)"/>

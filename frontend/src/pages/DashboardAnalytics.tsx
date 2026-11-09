@@ -94,7 +94,7 @@ const CARD_CONFIG = [
   },
   {
     key: 'ditolak' as const, label: 'Tidak Lolos',
-    color: '#C00000', tint: '#FBEAEA',
+    color: '#C00000', tint: '#FCEAEA',
     icon: <svg className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>,
   },
   {
@@ -104,7 +104,7 @@ const CARD_CONFIG = [
   },
   {
     key: 'perbaikan' as const, label: 'Perlu Perbaikan',
-    color: '#B6A92B', tint: '#F8F5DC',
+    color: '#C0B22B', tint: '#FAF9E2',
     icon: <svg className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" /></svg>,
   },
 ]
@@ -418,10 +418,10 @@ export default function DashboardAnalytics() {
         ) : (
           <ResponsiveContainer width="100%" height={300}>
             <BarChart data={kriteriaData} layout="vertical" margin={{ left: 10, right: 20 }}>
-              <CartesianGrid strokeDasharray="3 3" horizontal={true} vertical={false} stroke="#f3f4f6" />
-              <XAxis type="number" tick={{ fontSize: 12 }} stroke="#9ca3af" />
-              <YAxis type="category" dataKey="label" tick={{ fontSize: 11 }} stroke="#6b7280" width={140} />
-              <Tooltip cursor={{ fill: '#f3f4f6' }} contentStyle={{ borderRadius: 12, border: 'none', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.1)' }} />
+              <CartesianGrid strokeDasharray="3 3" horizontal={true} vertical={false} stroke="#BFBFBF" />
+              <XAxis type="number" tick={{ fontSize: 12 }} stroke="#8B8A86" />
+              <YAxis type="category" dataKey="label" tick={{ fontSize: 11 }} stroke="#686765" width={140} />
+              <Tooltip cursor={{ fill: '#F1F4BD' }} contentStyle={{ borderRadius: 12, border: 'none', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.1)' }} />
               <Bar dataKey="value" name="Jumlah" fill="#007C7B" radius={[0, 6, 6, 0]} barSize={24}>
                 {kriteriaData.map((_entry, index) => (
                   <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
@@ -439,23 +439,23 @@ export default function DashboardAnalytics() {
         ) : (
           <ResponsiveContainer width="100%" height={300}>
             <ComposedChart data={timelineData} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
-              <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f3f4f6" />
-              <XAxis dataKey="date" tick={{ fontSize: 12 }} stroke="#9ca3af" tickMargin={10} axisLine={false} tickLine={false} />
-              <YAxis yAxisId="jumlah" tick={{ fontSize: 12 }} stroke="#9ca3af" axisLine={false} tickLine={false} allowDecimals={false} />
-              <YAxis yAxisId="persentase" orientation="right" domain={[0, 100]} tick={{ fontSize: 12 }} stroke="#9ca3af" axisLine={false} tickLine={false} tickFormatter={(value: number) => `${value}%`} />
+              <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#BFBFBF" />
+              <XAxis dataKey="date" tick={{ fontSize: 12 }} stroke="#8B8A86" tickMargin={10} axisLine={false} tickLine={false} />
+              <YAxis yAxisId="jumlah" tick={{ fontSize: 12 }} stroke="#8B8A86" axisLine={false} tickLine={false} allowDecimals={false} />
+              <YAxis yAxisId="persentase" orientation="right" domain={[0, 100]} tick={{ fontSize: 12 }} stroke="#8B8A86" axisLine={false} tickLine={false} tickFormatter={(value: number) => `${value}%`} />
               <Tooltip
                 formatter={(value, name) => [
                   String(name).startsWith('%') ? `${Number(value).toFixed(1)}%` : Number(value).toLocaleString('id-ID'),
                   name,
                 ]}
-                contentStyle={{ borderRadius: 12, border: '1px solid #e5e7eb', boxShadow: '0 10px 15px -1px rgba(0,0,0,0.1)' }}
+                contentStyle={{ borderRadius: 12, border: '1px solid #BFBFBF', boxShadow: '0 10px 15px -1px rgba(0,0,0,0.1)' }}
               />
               <Legend formatter={(value: string) => <span className="text-xs font-medium text-gray-700">{value}</span>} />
               <Line type="monotone" yAxisId="jumlah" dataKey="count" name="Usulan Satker" stroke="#007C7B" strokeWidth={3} dot={false} activeDot={{ r: 5 }} />
               <Line type="monotone" yAxisId="jumlah" dataKey="lolosSeleksiAwal" name="Lolos Seleksi Awal" stroke="#E5832B" strokeWidth={2} dot={false} activeDot={{ r: 5 }} />
               <Line type="monotone" yAxisId="jumlah" dataKey="lolosPenilaianAkhir" name="Lolos Penilaian Akhir" stroke="#42AE78" strokeWidth={2} dot={false} activeDot={{ r: 5 }} />
               <Line type="monotone" yAxisId="persentase" dataKey="persenSeleksiAwal" name="% Lolos Seleksi Awal" stroke="#C00000" strokeWidth={2} strokeDasharray="5 4" dot={false} activeDot={{ r: 5 }} />
-              <Line type="monotone" yAxisId="persentase" dataKey="persenPenilaianAkhir" name="% Lolos Penilaian Akhir" stroke="#6950A1" strokeWidth={2} strokeDasharray="5 4" dot={false} activeDot={{ r: 5 }} />
+              <Line type="monotone" yAxisId="persentase" dataKey="persenPenilaianAkhir" name="% Lolos Penilaian Akhir" stroke="#C0B22B" strokeWidth={2} strokeDasharray="5 4" dot={false} activeDot={{ r: 5 }} />
             </ComposedChart>
           </ResponsiveContainer>
         )}

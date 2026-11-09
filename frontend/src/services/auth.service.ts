@@ -11,6 +11,12 @@ interface RegisterPayload {
 export const register = (payload: RegisterPayload) =>
   api.post('/auth/register', payload)
 
+export const requestPasswordReset = (email: string) =>
+  api.post<{ message: string }>('/auth/forgot-password', { email })
+
+export const resetPassword = (userId: number, token: string, password: string) =>
+  api.post('/auth/reset-password', { userId, token, password })
+
 export const login = async (email: string, password: string) => {
   const { data } = await api.post('/auth/login', { email, password })
   localStorage.setItem('token', data.access_token)

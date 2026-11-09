@@ -46,7 +46,7 @@ export default function FinalSignatureForm({ id, satker, unitMode = false, disab
         <label className="text-sm sm:col-span-2">Peran<select className={inputClass} value={role} onChange={(e) => setRole(e.target.value)}><option value="">Pilih peran</option>{availableRoles.map((value) => <option key={value}>{value}</option>)}</select></label>
         {!unitMode && <label className="text-sm">Keputusan<select className={inputClass} value={decision} onChange={(e) => setDecision(e.target.value as typeof decision)}><option value="">Pilih keputusan</option><option value="LOLOS">Lolos</option><option value="TIDAK_LOLOS">Tidak Lolos</option></select></label>}
       </div>
-      <div className="overflow-hidden rounded-lg border border-slate-300"><SignatureCanvas ref={pad} penColor="#111827" canvasProps={{ className: 'block h-44 w-full touch-none', 'aria-label': 'Tanda tangan penilaian akhir' }} /></div>
+      <div className="overflow-hidden rounded-lg border border-slate-300"><SignatureCanvas ref={pad} penColor="#393231" canvasProps={{ className: 'block h-44 w-full touch-none', 'aria-label': 'Tanda tangan penilaian akhir' }} /></div>
       <div className="flex justify-end gap-3"><button type="button" onClick={() => pad.current?.clear()} className="rounded-lg border px-4 py-2 text-sm">Hapus tanda tangan</button><button type="button" onClick={() => void submit()} className="rounded-lg bg-teal-700 px-4 py-2 text-sm text-white">{busy ? 'Menyimpan...' : 'Simpan tanda tangan'}</button></div>
     </fieldset>
   </div>
