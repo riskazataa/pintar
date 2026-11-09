@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useState, useCallback, useRef } from 'react'
 import { useLocation, useNavigate, useParams } from 'react-router-dom'
 import axios from 'axios'
 import {
@@ -132,7 +132,7 @@ function buildTreeStructure(questions: any[]) {
 }
 
 export default function Usulan() {
-  const { notify } = useNotifications()
+  const { notify, confirm } = useNotifications()
   const navigate = useNavigate()
   const location = useLocation()
   const isCreatePage = location.pathname === '/satker/usulan/tambah'
@@ -181,6 +181,8 @@ export default function Usulan() {
   const hasAssessmentQuestions = questions.some((question) => !question.is_header)
   const [saving, setSaving] = useState(false)
   const [savingDraft, setSavingDraft] = useState(false)
+  const [confirmingSubmit, setConfirmingSubmit] = useState(false)
+  const confirmSubmitPending = useRef(false)
   const [catatanPerbaikan, setCatatanPerbaikan] = useState('')
   const [detailUsulan, setDetailUsulan] = useState<any>(null)
   const [submissionsLocked, setSubmissionsLocked] = useState(false)
@@ -374,7 +376,6 @@ export default function Usulan() {
 
     if (questionsLoading || !hasAssessmentQuestions) return
 
-    setSaving(true)
     const missingColumn = assessmentColumns.find((column) => column.required && column.type !== 'readonly' && Object.values(answers).some((answer) => {
       const question = questions.find((q) => String(q.id) === answer.question_id)
       if (question?.is_header || question?.satker_lock_mode === 'ROW') return false
@@ -384,7 +385,19 @@ export default function Usulan() {
       if (column.type === 'checkbox') return value !== true
       return value === undefined || value === null || (typeof value === 'string' && !value.trim())
     }))
-    if (missingColumn) { setShowAssessmentErrors(true); notify('Kolom "' + missingColumn.title + '" wajib diisi pada pertanyaan yang masih kosong.', 'warning'); setSaving(false); return }
+    if (missingColumn) { setShowAssessmentErrors(true); notify('Kolom "' + missingColumn.title + '" wajib diisi pada pertanyaan yang masih kosong.', 'warning'); return }
+    if (confirmSubmitPending.current) return
+    confirmSubmitPending.current = true
+    setConfirmingSubmit(true)
+    const shouldSubmit = await confirm(
+      editingId ? 'Kirim perbaikan usulan ini untuk dinilai?' : 'Kirim usulan ini untuk dinilai?',
+      { title: 'Konfirmasi pengiriman usulan', confirmLabel: 'Ya, submit usulan' },
+    )
+    confirmSubmitPending.current = false
+    setConfirmingSubmit(false)
+    if (!shouldSubmit) return
+
+    setSaving(true)
     const payload = {
       judul: namaInovasi, deskripsi_inovasi: deskripsiInovasi.trim(), tahun: parseInt(tahun, 10), jenis_inovasi: jenisInovasi[0], jenis_inovasi_pilihan: jenisInovasi, jenis_inovasi_lainnya: '', kriteria_inovasi: normalizeKriteriaInovasi(kriteria), link_data_dukung: linkDataDukung, pic_nama: picContacts[0]?.nama || '', pic_telp: picContacts[0]?.no_whatsapp || '', pic_penanggung_jawab: picContacts,
       assessment_answers: Object.values(answers).map((answer) => ({
@@ -738,11 +751,12 @@ export default function Usulan() {
             </div>
             <div className="flex items-center justify-between border-t px-6 py-4">
               <div className="flex items-center gap-2">
-                {step === 2 && canSaveDraft && <button onClick={handleSaveDraft} disabled={saving || savingDraft || (!editingId && (submissionLockLoading || submissionsLocked))} className="rounded-lg border border-blue-200 px-4 py-2 text-sm font-medium text-blue-700 transition hover:bg-blue-50 disabled:opacity-60">{savingDraft ? 'Menyimpan Draft...' : 'Simpan Draft'}</button>}
                 {step === 2 && editingId && detailUsulan?.status !== 'DRAFT' && <button onClick={() => setStep(1)} disabled={saving || savingDraft} className="rounded-lg border px-4 py-2 text-sm font-medium text-gray-600 transition hover:bg-gray-50 disabled:opacity-60">Kembali</button>}
-                {step === 1 && canSaveDraft && <button onClick={handleSaveDraft} disabled={saving || savingDraft || (!editingId && (submissionLockLoading || submissionsLocked))} className="rounded-lg border border-blue-200 px-4 py-2 text-sm font-medium text-blue-700 transition hover:bg-blue-50 disabled:opacity-60">{savingDraft ? 'Menyimpan Draft...' : 'Simpan Draft'}</button>}
               </div>
-              <button onClick={handleSubmit} disabled={saving || savingDraft || questionsLoading || (step === 2 && !hasAssessmentQuestions) || (!editingId && (submissionLockLoading || submissionsLocked))} className="rounded-lg bg-blue-600 px-5 py-2 text-sm font-medium text-white transition hover:bg-blue-700 disabled:opacity-60">{saving ? 'Menyimpan...' : step === 1 ? 'Selanjutnya' : 'Submit Usulan'}</button>
+              <div className="flex items-center gap-2">
+                {canSaveDraft && <button onClick={handleSaveDraft} disabled={saving || savingDraft || confirmingSubmit || (!editingId && (submissionLockLoading || submissionsLocked))} className="rounded-lg border border-blue-200 px-4 py-2 text-sm font-medium text-blue-700 transition hover:bg-blue-50 disabled:opacity-60">{savingDraft ? 'Menyimpan Draft...' : 'Simpan Draft'}</button>}
+                <button onClick={handleSubmit} disabled={saving || savingDraft || confirmingSubmit || questionsLoading || (step === 2 && !hasAssessmentQuestions) || (!editingId && (submissionLockLoading || submissionsLocked))} className="rounded-lg bg-blue-600 px-5 py-2 text-sm font-medium text-white transition hover:bg-blue-700 disabled:opacity-60">{saving ? 'Menyimpan...' : step === 1 ? 'Selanjutnya' : 'Submit Usulan'}</button>
+              </div>
             </div>
           </div>
         </div>
