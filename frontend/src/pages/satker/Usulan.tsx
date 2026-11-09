@@ -155,7 +155,7 @@ export default function Usulan() {
   const [endDate, setEndDate] = useState('')
   const [page, setPage] = useState(1)
   const [sortOrder, setSortOrder] = useState<TableSortOrder>('desc')
-  const [selectedYear, setSelectedYear] = useState('')
+  const [selectedYear, setSelectedYear] = useState(() => String(new Date().getFullYear()))
 
   const [editingId, setEditingId] = useState<string | null>(null)
   const [deleteTarget, setDeleteTarget] = useState<UsulanItem | null>(null)
