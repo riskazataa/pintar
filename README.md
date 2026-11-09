@@ -73,8 +73,10 @@ Isi `.env` root:
 - `FRONTEND_URL`: `https://siapin.dikalaksana.com`, juga menjadi origin CORS yang diizinkan.
 - `API_URL`: `https://api-siapin.dikalaksana.com`, ditanam ke frontend ketika build.
 - `PROXY_NETWORK`: `manris_manris-network`, sesuai network Nginx existing.
-- `RESEND_API_KEY`: API key Resend untuk notifikasi persetujuan akun.
+- `RESEND_API_KEY`: API key Resend untuk notifikasi akun dan tautan reset kata sandi.
 - `EMAIL_FROM`: pengirim dari domain yang sudah diverifikasi di Resend.
+
+Untuk memakai **Lupa kata sandi** di luar Docker, atur `RESEND_API_KEY`, `EMAIL_FROM`, dan `FRONTEND_URL` di `backend/.env`. Gunakan URL frontend yang dapat dibuka oleh penerima email (`http://localhost:5173` untuk pengembangan di mesin yang sama). Dari folder `backend`, jalankan `npx prisma migrate deploy` dan `npx prisma generate`, lalu mulai ulang backend. Docker Compose menjalankan migrasi saat container API dimulai. Tautan dikirim ke alamat email akun aktif yang terdaftar dan berlaku 30 menit.
 
 Jika `.env` sudah ada, edit nilainya tanpa mengganti password database/JWT yang
 sudah digunakan. Baris `APP_DOMAIN` dan `HTTP_PORT` dari konfigurasi lama tidak

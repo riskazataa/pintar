@@ -3,20 +3,33 @@ import {
   ConflictException,
   ForbiddenException,
   Injectable,
+  Logger,
   NotFoundException,
+  ServiceUnavailableException,
   UnauthorizedException,
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcrypt';
+import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
 import { PrismaService } from '../prisma/prisma.service';
 import { EmailService } from '../email/email.service';
 import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
 import { UpdateProfileDto } from './dto/update-profile.dto';
 import { RegistrationStatus } from '@prisma/client';
+import { ResetPasswordDto } from './dto/password-reset.dto';
+
+const RESET_VALIDITY_MINUTES = 30;
+const RESET_VALIDITY_MS = RESET_VALIDITY_MINUTES * 60_000;
+const RESET_COOLDOWN_MS = 5 * 60_000;
+
+function resetDigest(token: string, email: string, passwordHash: string) {
+  return createHash('sha256').update(JSON.stringify([token, email, passwordHash])).digest('hex');
+}
 
 @Injectable()
 export class AuthService {
+  private readonly logger = new Logger(AuthService.name);
   constructor(
     private readonly prisma: PrismaService,
     private readonly emailService: EmailService,
@@ -95,6 +108,78 @@ export class AuthService {
         satker: user.satker,
       },
     };
+  }
+
+  async forgotPassword(email: string) {
+    if (!this.emailService.canSendPasswordReset()) {
+      throw new ServiceUnavailableException('Pengiriman tautan reset belum tersedia. Silakan hubungi admin.');
+    }
+    const user = await this.prisma.user.findUnique({
+      where: { email },
+      select: { id: true, email: true, password: true, status_registrasi: true },
+    });
+
+    if (user?.status_registrasi === 'APPROVED') {
+      const token = randomBytes(32).toString('hex');
+      const now = Date.now();
+      const data = {
+        token_hash: resetDigest(token, user.email, user.password),
+        expires_at: new Date(now + RESET_VALIDITY_MS),
+      };
+      const created = await this.prisma.passwordReset.createMany({
+        data: { user_id: user.id, ...data },
+        skipDuplicates: true,
+      });
+      const issued = created.count > 0 || (await this.prisma.passwordReset.updateMany({
+        where: {
+          user_id: user.id,
+          expires_at: { lte: new Date(now + RESET_VALIDITY_MS - RESET_COOLDOWN_MS) },
+        },
+        data,
+      })).count > 0;
+
+      if (issued) {
+        void this.emailService.sendPasswordReset(user.email, user.id, token, RESET_VALIDITY_MINUTES)
+          .catch(() => this.logger.error('Gagal mengirim email reset kata sandi melalui Resend.'));
+      }
+    }
+
+    return { message: 'Jika akun aktif terdaftar, tautan reset akan dikirim. Periksa kotak masuk dan folder Spam.' };
+  }
+
+  async resetPassword({ userId, token, password }: ResetPasswordDto) {
+    const invalidLink = () => new BadRequestException('Tautan reset tidak valid, sudah digunakan, atau kedaluwarsa.');
+    const reset = await this.prisma.passwordReset.findUnique({
+      where: { user_id: userId },
+      include: { user: { select: { email: true, password: true, status_registrasi: true } } },
+    });
+    if (!reset || reset.expires_at <= new Date() || reset.user.status_registrasi !== 'APPROVED') {
+      throw invalidLink();
+    }
+    const digest = resetDigest(token, reset.user.email, reset.user.password);
+    if (!timingSafeEqual(Buffer.from(reset.token_hash, 'hex'), Buffer.from(digest, 'hex'))) {
+      throw invalidLink();
+    }
+    if (Buffer.byteLength(password, 'utf8') > 72) {
+      throw new BadRequestException('Kata sandi melebihi batas ukuran. Gunakan kata sandi yang lebih pendek.');
+    }
+    const hashedPassword = await bcrypt.hash(password, 12);
+    await this.prisma.$transaction(async (tx) => {
+      const consumed = await tx.passwordReset.deleteMany({
+        where: { user_id: userId, token_hash: digest, expires_at: { gt: new Date() } },
+      });
+      if (!consumed.count) throw invalidLink();
+      const updated = await tx.user.updateMany({
+        where: {
+          id: userId,
+          email: reset.user.email,
+          password: reset.user.password,
+          status_registrasi: 'APPROVED',
+        },
+        data: { password: hashedPassword },
+      });
+      if (!updated.count) throw invalidLink();
+    });
   }
 
   async getProfile(userId: number) {

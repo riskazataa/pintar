@@ -56,6 +56,14 @@ model User {
 
   // 3. TAMBAHAN: Tanda tangan usulan ini
   usulan_signatures UsulinSignature[]
+  password_reset PasswordReset?
+}
+
+model PasswordReset {
+  user_id    Int      @id
+  token_hash String
+  expires_at DateTime
+  user       User     @relation(fields: [user_id], references: [id], onDelete: Cascade)
 }
 
 enum StatusInovasi {

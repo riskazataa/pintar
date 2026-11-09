@@ -65,7 +65,7 @@ export default function Landing({ initialModal = null }: { initialModal?: Modal 
   const open = (mode: Modal) => { setRegistered(false); setModal(mode) }
   const primary = 'inline-flex items-center justify-center gap-2 rounded-full bg-blue-600 px-6 py-3 text-sm font-semibold text-white shadow-lg shadow-blue-600/15 transition hover:bg-blue-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-blue-600'
 
-  return <div className="min-h-screen bg-[#fbfcfe] text-slate-900">
+  return <div className="min-h-screen bg-[#FAFAF5] text-slate-900">
     <header className="border-b border-slate-100 bg-white/95">
       <nav aria-label="Navigasi utama" className="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-5 px-5 py-5 sm:px-8">
         <a href="/" aria-label="SIAPIN — beranda" className="flex items-center gap-3"><img src="/siapin-logo.svg" alt="" className="h-11 w-11 drop-shadow-sm" /><span className="text-xl font-extrabold tracking-tight text-slate-900">SIAPIN<span className="block text-[10px] font-medium uppercase tracking-[.13em] text-slate-500">Sistem Informasi Aplikasi Penetapan Inovasi</span></span></a>
@@ -115,7 +115,7 @@ export default function Landing({ initialModal = null }: { initialModal?: Modal 
           <p className="text-xs font-bold uppercase tracking-[.18em] text-blue-600">Kami siap membantu</p>
           <h2 className="mt-3 text-3xl font-bold tracking-tight">Kontak Admin dan masukan</h2>
           <div className="mt-8 grid gap-5 lg:grid-cols-2">
-            <article className="rounded-2xl border border-slate-200 bg-[#fbfcfe] p-6 sm:p-8">
+            <article className="rounded-2xl border border-slate-200 bg-[#FAFAF5] p-6 sm:p-8">
               <span className="inline-flex rounded-xl bg-blue-50 p-3 text-blue-600"><Icon kind="phone" /></span>
               <h3 className="mt-5 text-lg font-semibold">Kontak Admin</h3>
               <p className="mt-4 text-sm text-slate-500">Nama</p>
@@ -125,7 +125,7 @@ export default function Landing({ initialModal = null }: { initialModal?: Modal 
                 0852 8509 4427 <Icon kind="arrow" className="h-4 w-4" />
               </a>
             </article>
-            <article className="rounded-2xl border border-slate-200 bg-[#fbfcfe] p-6 sm:p-8">
+            <article className="rounded-2xl border border-slate-200 bg-[#FAFAF5] p-6 sm:p-8">
               <span className="inline-flex rounded-xl bg-violet-50 p-3 text-violet-600"><Icon kind="message" /></span>
               <h3 className="mt-5 text-lg font-semibold">Pertanyaan atau Saran</h3>
               <p className="mt-2 text-sm leading-6 text-slate-500">Tuliskan masukan Anda. WhatsApp akan terbuka dengan pesan yang siap ditinjau dan dikirim.</p>

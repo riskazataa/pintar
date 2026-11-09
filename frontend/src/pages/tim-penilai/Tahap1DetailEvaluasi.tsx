@@ -521,7 +521,7 @@ export default function Tahap1DetailEvaluasi({ tahap = 1, onUpdated }: { tahap?:
               </div>
               <SignatureCanvas
                 ref={sigPad}
-                penColor="#111827"
+                penColor="#393231"
                 canvasProps={{ className: 'block h-44 w-full cursor-crosshair touch-none' }}
               />
             </div>

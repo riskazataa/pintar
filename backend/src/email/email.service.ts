@@ -11,6 +11,25 @@ export class EmailService {
     this.resend = new Resend(this.configService.get<string>('RESEND_API_KEY'));
   }
 
+  canSendPasswordReset() {
+    return Boolean(this.configService.get<string>('RESEND_API_KEY')?.trim() &&
+      this.configService.get<string>('EMAIL_FROM')?.trim());
+  }
+
+  async sendPasswordReset(email: string, userId: number, token: string, validityMinutes: number) {
+    const from = this.configService.get<string>('EMAIL_FROM');
+    if (!from) throw new Error('EMAIL_FROM belum dikonfigurasi.');
+    const url = new URL('/reset-password', this.configService.get<string>('FRONTEND_URL') || 'http://localhost:5173');
+    url.hash = new URLSearchParams({ akun: String(userId), token }).toString();
+    const { error } = await this.resend.emails.send({
+      from,
+      to: email,
+      subject: 'Atur ulang kata sandi SIAPIN',
+      text: `Buka tautan berikut untuk membuat kata sandi baru:\n${url.href}\n\nTautan berlaku selama ${validityMinutes} menit dan hanya dapat digunakan sekali. Abaikan email ini jika Anda tidak meminta reset kata sandi.`,
+    });
+    if (error) throw new Error('Resend menolak pengiriman email reset.');
+  }
+
   async sendRegistrationNotification(
     emailTujuan: string,
     statusRegistrasi: RegistrationStatus,

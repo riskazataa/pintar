@@ -2,6 +2,7 @@ import { Routes, Route, Navigate, useParams } from 'react-router-dom'
 
 // Auth
 import Landing from './pages/Landing'
+import PasswordRecovery from './pages/PasswordRecovery'
 import Profile from './pages/Profile'
 
 // Shared Component (Dashboard)
@@ -34,6 +35,8 @@ function App() {
   return (
     <Routes>
       <Route path="/login" element={<Landing initialModal="login" />} />
+      <Route path="/lupa-password" element={<PasswordRecovery key="request" mode="request" />} />
+      <Route path="/reset-password" element={<PasswordRecovery key="reset" mode="reset" />} />
       <Route path="/register" element={<Landing initialModal="register" />} />
       <Route path="/profil" element={<Profile />} />
 
