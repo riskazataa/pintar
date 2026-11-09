@@ -11,6 +11,7 @@ import DashboardAnalytics from './pages/DashboardAnalytics'
 import AdminLayout from './layouts/AdminLayout'
 import Akun from './pages/admin/Akun'
 import Organisasi from './pages/admin/Organisasi'
+import PengaturanUsulan from './pages/admin/PengaturanUsulan'
 
 // Unit
 import SatkerLayout from './layouts/SatkerLayout'
@@ -42,6 +43,7 @@ function App() {
         <Route path="dashboard" element={<DashboardAnalytics />} />
         <Route path="akun" element={<Akun />} />
         <Route path="organisasi" element={<Organisasi />} />
+        <Route path="kunci-usulan" element={<PengaturanUsulan />} />
       <Route path="management-ba" element={<ManagementBA />} />
         <Route path="profil" element={<Profile />} />
       </Route>

@@ -1,16 +1,24 @@
 import { useEffect, useState } from 'react'
 import axios from 'axios'
 import { getUsersByStatus, getStats, verifyUser, deleteUser } from '../../services/admin.service'
+import { getSatker } from '../../services/satker.service'
 import TablePagination from '../../components/TablePagination'
 import TableToolbar, { type TableSortOrder } from '../../components/TableToolbar'
 import { useNotifications } from '../../components/NotificationProvider'
+
+interface SatkerOption {
+  id: string | number
+  nama_satker: string
+}
 
 interface User {
   id: string
   nama_lengkap: string
   email: string
   role: string
+  satker_id?: string | number | null
   satker?: {
+    id: string | number
     nama_satker: string;}
   status: string
 }
@@ -31,6 +39,8 @@ export default function Akun() {
   const [page, setPage] = useState(1)
   const [limit, setLimit] = useState(10)
   const [search, setSearch] = useState('')
+  const [satkerFilter, setSatkerFilter] = useState('')
+  const [satkerOptions, setSatkerOptions] = useState<SatkerOption[]>([])
   const [sortOrder, setSortOrder] = useState<TableSortOrder>('desc')
 
   // Waiting list modal
@@ -68,6 +78,21 @@ export default function Akun() {
     load()
     return () => { cancelled = true }
   }, [refreshKey])
+
+  useEffect(() => {
+    let cancelled = false
+
+    getSatker()
+      .then(({ data }) => {
+        if (cancelled) return
+        setSatkerOptions(Array.isArray(data) ? data : data.data ?? [])
+      })
+      .catch(() => {
+        if (!cancelled) setSatkerOptions([])
+      })
+
+    return () => { cancelled = true }
+  }, [])
 
   const openWaitingList = async () => {
     setWaitingOpen(true)
@@ -115,6 +140,7 @@ export default function Akun() {
 
   const filteredUsers = users
     .filter((user) => `${user.nama_lengkap} ${user.email} ${user.role} ${user.satker?.nama_satker || ''}`.toLowerCase().includes(search.trim().toLowerCase()))
+    .filter((user) => !satkerFilter || String(user.satker?.id ?? user.satker_id ?? '') === satkerFilter)
     .sort((a, b) => (sortOrder === 'desc' ? -1 : 1) * (Number(a.id) - Number(b.id)))
   const totalPages = Math.max(1, limit === 0 ? 1 : Math.ceil(filteredUsers.length / limit))
   const currentPage = Math.min(page, totalPages)
@@ -163,7 +189,26 @@ export default function Akun() {
       )}
 
       <div className="mb-3">
-        <TableToolbar search={search} onSearchChange={(value) => { setSearch(value); setPage(1) }} searchPlaceholder="Cari nama, email, unit..." sortOrder={sortOrder} onSortOrderChange={(value) => { setSortOrder(value); setPage(1) }} />
+        <TableToolbar
+          search={search}
+          onSearchChange={(value) => { setSearch(value); setPage(1) }}
+          searchPlaceholder="Cari nama, email, unit..."
+          sortOrder={sortOrder}
+          onSortOrderChange={(value) => { setSortOrder(value); setPage(1) }}
+          onClearFilters={() => { setSearch(''); setSatkerFilter(''); setSortOrder('desc'); setPage(1) }}
+        >
+          <label className="block text-xs font-medium text-slate-500">
+            Satker
+            <select
+              value={satkerFilter}
+              onChange={(event) => { setSatkerFilter(event.target.value); setPage(1) }}
+              className="mt-1 h-9 w-full rounded-md border border-slate-200 bg-white px-2.5 text-sm text-slate-700 outline-none transition focus:border-violet-300 focus:ring-2 focus:ring-violet-100"
+            >
+              <option value="">Semua Satker</option>
+              {satkerOptions.map((satker) => <option key={satker.id} value={satker.id}>{satker.nama_satker}</option>)}
+            </select>
+          </label>
+        </TableToolbar>
       </div>
 
       {/* Users Table */}

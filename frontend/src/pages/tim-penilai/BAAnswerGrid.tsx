@@ -58,7 +58,7 @@ export default function BAAnswerGrid({ answers, columns, values, disabled, onCha
           ? <a href={clickableUrl} target="_blank" rel="noreferrer" className="block max-w-full break-all text-blue-700 underline decoration-blue-300 underline-offset-2 hover:text-blue-900">{String(value)}</a>
           : <span className="break-all text-slate-400">{value || '—'}</span>
         else if (rowDisabled && column.type === 'checkbox') input = <div className="flex justify-center"><input aria-label={column.title} type="checkbox" checked={value === true} disabled className="h-4 w-4 cursor-not-allowed rounded border-slate-300 accent-slate-500 disabled:opacity-60" /></div>
-        else if (rowDisabled) input = <span className={`whitespace-pre-wrap break-words ${value === '' || value == null ? 'text-slate-400' : 'text-slate-700'}`}>{value === '' || value == null ? '—' : String(value)}</span>
+        else if (rowDisabled) input = <span className={`block max-w-[min(32rem,70vw)] whitespace-pre-wrap break-words [overflow-wrap:anywhere] ${value === '' || value == null ? 'text-slate-400' : 'text-slate-700'}`}>{value === '' || value == null ? '—' : String(value)}</span>
         else if (column.type === 'readonly') input = <span className="text-gray-500">{value || '—'}</span>
         else if (column.type === 'url') input = <input aria-label={column.title} type="url" value={value ?? ''} onChange={(event) => update(event.target.value)} className="w-full rounded border p-2" />
         else if (column.type === 'checkbox') input = <div className="flex justify-center"><input aria-label={column.title} disabled={rowDisabled} type="checkbox" checked={value === true} onChange={(event) => update(event.target.checked)} /></div>

@@ -30,6 +30,12 @@ model Satker {
   inovasi     Inovasi[]
 }
 
+model SystemSetting {
+  id                  Int      @id @default(1)
+  submissions_locked  Boolean  @default(false)
+  updated_at          DateTime @updatedAt
+}
+
 model User {
   id                Int                @id @default(autoincrement())
   email             String             @unique
