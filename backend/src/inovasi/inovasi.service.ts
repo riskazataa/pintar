@@ -24,6 +24,16 @@ import { baCriteriaStats } from './ba-criteria-stats';
 export class InovasiService {
   constructor(private readonly prisma: PrismaService) {}
 
+  private async assertSubmissionIsUnlocked() {
+    const setting = await this.prisma.systemSetting.findUnique({
+      where: { id: 1 },
+      select: { submissions_locked: true },
+    });
+    if (setting?.submissions_locked) {
+      throw new ForbiddenException('Penambahan usulan sedang dikunci oleh Super Admin.');
+    }
+  }
+
   private get includeConfig() {
     return {
       satker: { select: { id: true, nama_satker: true } },
@@ -393,6 +403,7 @@ export class InovasiService {
     if (user.role !== 'UNIT' || !user.satker_id) {
       throw new ForbiddenException('Hanya akun unit yang dapat menyimpan draft usulan');
     }
+    await this.assertSubmissionIsUnlocked();
 
     const assessmentAnswers = this.normalizeDraftAnswers(dto);
     await this.validateQuestionStage(assessmentAnswers, 1);
@@ -500,6 +511,7 @@ export class InovasiService {
     dto: CreateInovasiDto,
     user: { sub: number; role: string; satker_id?: number | null },
   ) {
+    if (user.role === 'UNIT') await this.assertSubmissionIsUnlocked();
     const assessment_answers = dto.assessment_answers;
     await this.validateQuestionStage(assessment_answers ?? [], 1);
     if (user.role === 'UNIT') await this.enforceSatkerLocks(assessment_answers ?? [], undefined);

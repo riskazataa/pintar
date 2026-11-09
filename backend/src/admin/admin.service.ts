@@ -6,6 +6,20 @@ import { RegistrationStatus } from '@prisma/client';
 export class AdminService {
   constructor(private readonly prisma: PrismaService) {}
 
+  async getSubmissionLock() {
+    const setting = await this.prisma.systemSetting.findUnique({ where: { id: 1 } });
+    return { locked: setting?.submissions_locked ?? false };
+  }
+
+  async setSubmissionLock(locked: boolean) {
+    const setting = await this.prisma.systemSetting.upsert({
+      where: { id: 1 },
+      update: { submissions_locked: locked },
+      create: { id: 1, submissions_locked: locked },
+    });
+    return { locked: setting.submissions_locked, updated_at: setting.updated_at };
+  }
+
   async getUserByStatus(status: RegistrationStatus) {
     return this.prisma.user.findMany({
       where: { status_registrasi: status },

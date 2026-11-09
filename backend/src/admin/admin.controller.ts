@@ -7,10 +7,14 @@ import {
   ParseIntPipe,
   Body,
   Query,
+  UseGuards,
 } from '@nestjs/common';
 import { AuthService } from '../auth/auth.service';
 import { AdminService } from './admin.service';
 import { RegistrationStatus } from '@prisma/client';
+import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { SuperAdminGuard } from '../auth/guards/super-admin.guard';
+import { SetSubmissionLockDto } from './dto/set-submission-lock.dto';
 
 @Controller('admin')
 export class AdminController {
@@ -18,6 +22,18 @@ export class AdminController {
     private readonly authService: AuthService,
     private readonly adminService: AdminService,
   ) {}
+
+  @Get('submission-lock')
+  @UseGuards(JwtAuthGuard)
+  async getSubmissionLock() {
+    return this.adminService.getSubmissionLock();
+  }
+
+  @Patch('submission-lock')
+  @UseGuards(SuperAdminGuard)
+  async setSubmissionLock(@Body() dto: SetSubmissionLockDto) {
+    return this.adminService.setSubmissionLock(dto.locked);
+  }
 
   @Patch('verify-user/:id')
   async verifyUser(

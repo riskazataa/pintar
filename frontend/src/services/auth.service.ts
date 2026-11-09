@@ -13,7 +13,6 @@ export const register = (payload: RegisterPayload) =>
 
 export const login = async (email: string, password: string) => {
   const { data } = await api.post('/auth/login', { email, password })
-  console.log("Isi respons backend:", data);
   localStorage.setItem('token', data.access_token)
   if (data.user) {
     localStorage.setItem('user', JSON.stringify(data.user))
