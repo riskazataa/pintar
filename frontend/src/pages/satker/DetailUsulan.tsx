@@ -39,7 +39,7 @@ export default function DetailUsulan() {
 
   useEffect(() => {
     if (!id) return
-    Promise.all([getUsulanDetail(id), getBAColumns(1)])
+    Promise.all([getUsulanDetail(id, 1, 'self-assessment'), getBAColumns(1)])
       .then(([res, template]) => {
         setData(res.data?.data || res.data)
         setColumns(template.data.columns ?? [])
@@ -154,6 +154,11 @@ export default function DetailUsulan() {
           </div>
 
           <div className="space-y-2">
+            {data.self_assessment_template_only && (
+              <p className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
+                Belum ada jawaban Self Assessment Satker yang tersimpan untuk usulan ini. Tabel di bawah menampilkan template aktif.
+              </p>
+            )}
             {data.assessment_answers && data.assessment_answers.length > 0 ? (
               <div className="overflow-x-auto rounded-xl border border-gray-200 bg-white">
                 <BAAnswerGrid

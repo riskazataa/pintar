@@ -22,6 +22,61 @@ describe('Pemisahan penilaian per tahap', () => {
   });
   const answers = [{ question_id: 20, jawaban_boolean: true }];
 
+  it('menampilkan template kosong untuk usulan lama tanpa memakai jawaban penilai', async () => {
+    db.inovasi.findUnique.mockResolvedValue({
+      status: 'PENDING',
+      penilai: [],
+      penilai_tahap2: [],
+      usulan_signatures: [],
+      assessment_answers: [{ tahap: 1, source: 'PENILAI', question_id: 20, jawaban_boolean: true }],
+    });
+    db.assessmentQuestion.findMany.mockResolvedValue([{ id: 20, is_header: false, pertanyaan: 'Kriteria' }]);
+
+    const detail = await service.findOne(50, 1, user, 'self-assessment');
+
+    expect(detail.self_assessment_template_only).toBe(true);
+    expect(detail.assessment_answers).toEqual([
+      expect.objectContaining({ question_id: 20, jawaban_boolean: false, catatan_string: null }),
+    ]);
+    expect(db.assessmentAnswer.createMany).not.toHaveBeenCalled();
+  });
+
+  describe('pengiriman Self Assessment Satker', () => {
+    const unit = { sub: 10, role: 'UNIT', satker_id: 2 };
+    const blankAnswer = { question_id: 20, jawaban_boolean: false };
+    const proposal = {
+      judul: 'Usulan', deskripsi_inovasi: 'Deskripsi', tahun: 2026, jenis_inovasi: 'Layanan',
+      kriteria_inovasi: [], link_data_dukung: 'https://example.org', pic_nama: 'PIC', pic_telp: '081234567890',
+    };
+
+    beforeEach(() => {
+      db.systemSetting = { findUnique: jest.fn().mockResolvedValue(null) };
+      db.inovasi.create = jest.fn().mockResolvedValue({ id: 50 });
+      db.inovasi.findUnique.mockResolvedValue({ id: 50, status: 'PERBAIKAN', user_id: 10, satker_id: 2 });
+    });
+
+    it('menolak usulan baru dan kirim ulang jika template tidak lengkap', async () => {
+      await expect(service.create({ ...proposal, assessment_answers: [] }, unit)).rejects.toThrow('belum dimuat');
+      db.assessmentQuestion.findMany.mockResolvedValueOnce([{ id: 20 }, { id: 21 }]);
+      await expect(service.update(50, { assessment_answers: [blankAnswer] }, unit)).rejects.toThrow('belum lengkap');
+      expect(db.$transaction).not.toHaveBeenCalled();
+    });
+
+    it('menyimpan baris template walaupun nilai jawaban opsional kosong', async () => {
+      db.assessmentQuestion.findMany.mockResolvedValueOnce([{ id: 20, is_header: false }]).mockResolvedValueOnce([]);
+      await service.create({ ...proposal, assessment_answers: [blankAnswer] }, unit);
+      expect(db.assessmentAnswer.createMany).toHaveBeenCalledWith({
+        data: [expect.objectContaining({ inovasi_id: 50, source: 'SATKER', ...blankAnswer })],
+      });
+    });
+
+    it('mempertahankan isian saat menyimpan draft tanpa baris assessment', async () => {
+      await service.updateDraft(50, { judul: 'Revisi', assessment_answers: [] }, unit);
+      expect(db.inovasi.update).toHaveBeenCalled();
+      expect(db.assessmentAnswer.deleteMany).not.toHaveBeenCalled();
+    });
+  });
+
   it('menolak penilai tahap 1 yang tidak ditugaskan pada tahap 2', async () => {
     db.inovasi.findUnique.mockResolvedValue({ status: 'SELESAI_EVALUASI', penilai: [{ id: 10 }], penilai_tahap2: [{ id: 11 }] });
     await expect(service.updateAssessmentByPenilai(1, { answers }, user, 2)).rejects.toThrow(ForbiddenException);
