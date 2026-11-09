@@ -165,7 +165,7 @@ export default function Hasil() {
   const [startDate, setStartDate] = useState('')
   const [endDate, setEndDate] = useState('')
   const [sortOrder, setSortOrder] = useState<TableSortOrder>('desc')
-  const [selectedYear, setSelectedYear] = useState('')
+  const [selectedYear, setSelectedYear] = useState(() => String(new Date().getFullYear()))
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [signDetail, setSignDetail] = useState<any>(null)
