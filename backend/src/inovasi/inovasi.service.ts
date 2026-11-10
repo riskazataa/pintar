@@ -64,7 +64,22 @@ export class InovasiService {
       query;
 
     const where: Prisma.InovasiWhereInput = {};
-    if (tahun) where.tahun = tahun;
+    if (tahun) {
+      const periodStart = new Date(Date.UTC(tahun, 0, 1));
+      const periodEnd = new Date(Date.UTC(tahun + 1, 0, 1));
+      where.AND = [{
+        OR: [
+          {
+            status: StatusInovasi.DRAFT,
+            created_at: { gte: periodStart, lt: periodEnd },
+          },
+          {
+            status: { not: StatusInovasi.DRAFT },
+            submitted_at: { gte: periodStart, lt: periodEnd },
+          },
+        ],
+      }];
+    }
 
     if (user.role !== 'UNIT' || query.hasil) where.status = { not: StatusInovasi.DRAFT };
 
@@ -584,6 +599,7 @@ export class InovasiService {
         data: {
           ...inovasiData,
           status: 'PENDING',
+          submitted_at: new Date(),
           satker_id: user.satker_id!,
           user_id: user.sub,
         },
@@ -659,6 +675,9 @@ export class InovasiService {
 
     inovasiData.status = StatusInovasi.PENDING;
     inovasiData.catatan_perbaikan = null;
+    if (existing.status === StatusInovasi.DRAFT) {
+      inovasiData.submitted_at = new Date();
+    }
 
     return this.prisma.$transaction(async (tx) => {
       await tx.inovasi.update({
