@@ -116,6 +116,7 @@ model Inovasi {
   timker_ttd_image      String?
 
   created_at            DateTime           @default(now())
+  submitted_at          DateTime?
   updated_at            DateTime           @updatedAt
   assessment_answers    AssessmentAnswer[]
   template_package_id   Int?
