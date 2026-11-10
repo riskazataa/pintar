@@ -240,18 +240,15 @@ export default function Tahap1Usulan({ tahap = 1 }: { tahap?: number }) {
             <div className="min-h-0 flex-1 overflow-auto">
               <table className="w-full min-w-[600px] text-left text-sm">
                 <thead className="sticky top-0 z-10 bg-slate-50 text-xs font-semibold uppercase tracking-wide text-slate-500">
-                  <tr><th className="px-5 py-3.5 sm:px-7">Satker</th><th className="px-5 py-3.5 text-center">Jumlah inovasi</th><th className="px-5 py-3.5 text-center">Perlu perbaikan</th><th className="px-5 py-3.5 text-right sm:px-7">Aksi</th></tr>
+                  <tr><th className="w-16 px-5 py-3.5 text-center sm:px-7">No</th><th className="px-5 py-3.5">Satker</th><th className="px-5 py-3.5 text-center">Jumlah inovasi</th><th className="px-5 py-3.5 text-center">Perlu perbaikan</th></tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
-                  {satkerSummary.map((satker) => (
+                  {satkerSummary.map((satker, index) => (
                     <tr key={satker.satker_id} className="transition-colors hover:bg-teal-50/50">
+                      <td className="px-5 py-3.5 text-center font-medium tabular-nums text-slate-500 sm:px-7">{index + 1}</td>
                       <td className="px-5 py-3.5 font-medium text-slate-800 sm:px-7">{satker.nama_satker}</td>
                       <td className="px-5 py-3.5 text-center tabular-nums"><span className="inline-flex min-w-9 justify-center rounded-full bg-blue-50 px-2.5 py-1 font-semibold text-blue-700">{satker.jumlah_usulan}</span></td>
                       <td className="px-5 py-3.5 text-center tabular-nums"><span className={`inline-flex min-w-9 justify-center rounded-full px-2.5 py-1 font-semibold ${satker.jumlah_perlu_perbaikan > 0 ? 'bg-amber-100 text-amber-800' : 'bg-slate-100 text-slate-500'}`}>{satker.jumlah_perlu_perbaikan}</span></td>
-                      <td className="px-5 py-3.5 text-right sm:px-7">
-                        <button onClick={() => { setSatkerFilter(String(satker.satker_id)); setStatusFilter(''); setPage(1); setSummaryOpen(false) }} className="text-xs font-semibold text-teal-700 hover:text-teal-900">Lihat usulan</button>
-                        {satker.jumlah_perlu_perbaikan > 0 && <button onClick={() => { setSatkerFilter(String(satker.satker_id)); setStatusFilter('PERBAIKAN'); setPage(1); setSummaryOpen(false) }} className="ml-3 text-xs font-semibold text-amber-700 hover:text-amber-900">Lihat perbaikan</button>}
-                      </td>
                     </tr>
                   ))}
                 </tbody>
