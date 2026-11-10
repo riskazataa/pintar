@@ -329,7 +329,7 @@ export default function Tahap1DetailEvaluasi({ tahap = 1, onUpdated }: { tahap?:
             </div>}
             <div className="space-y-4">
               {data.assessment_answers && data.assessment_answers.length > 0 ? (
-                <div className="overflow-x-auto rounded-xl border border-gray-200 bg-white">
+                <div className="w-full">
                   <BAAnswerGrid questionTitle={questionTitle} answers={data.assessment_answers} columns={columns} values={localAnswers} disabled={!isEditing} onChange={(answerId, value) => { setLocalAnswers((prev) => ({ ...prev, [answerId]: value })); setChanged(true) }} />
                 </div>
               ) : (

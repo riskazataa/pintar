@@ -39,6 +39,17 @@ export class InovasiController {
     return this.inovasiService.findAll(query, req.user);
   }
 
+  @Get('summary/satker')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('SUPER_ADMIN', 'REVIEWER')
+  async getSatkerSubmissionSummary(
+    @Req() req: any,
+    @Query('tahun', new DefaultValuePipe(new Date().getFullYear()), ParseIntPipe) tahun: number,
+    @Query('tahap', new DefaultValuePipe(1), ParseIntPipe) tahap: number,
+  ) {
+    return this.inovasiService.getSatkerSubmissionSummary(req.user, tahun, tahap);
+  }
+
   @Get('stats')
   @UseGuards(JwtAuthGuard)
   async getStats(

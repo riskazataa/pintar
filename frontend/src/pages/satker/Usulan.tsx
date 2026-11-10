@@ -730,7 +730,7 @@ export default function Usulan() {
                       <button type="button" onClick={loadQuestions} disabled={savingDraft} className="mt-2 font-semibold underline">Muat ulang template</button>
                     </div>
                   ) : (
-                    <div className="overflow-x-auto overscroll-x-contain rounded-xl border border-gray-200 bg-white">
+                    <div className="w-full">
                       <BAAnswerGrid
                         satkerMode
                         questionTitle={questionTitle}
