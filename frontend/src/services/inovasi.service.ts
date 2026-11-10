@@ -1,6 +1,56 @@
 import api from '../api/axios'
+import axios from 'axios'
 
 export const getStatsInovasi = (tahun?: number) => api.get('/inovasi/stats', { params: { tahun } })
+
+export interface SatkerSubmissionSummary {
+  satker_id: number
+  nama_satker: string
+  jumlah_usulan: number
+  jumlah_perlu_perbaikan: number
+}
+
+export const getSatkerSubmissionSummary = async (tahun: number, tahap = 1) => {
+  try {
+    return await api.get<SatkerSubmissionSummary[]>('/inovasi/summary/satker', { params: { tahun, tahap } })
+  } catch (error) {
+    if (!axios.isAxiosError(error) || error.response?.status !== 404) throw error
+
+    // Keep the rekap usable while an older backend instance is still running.
+    const response = await api.get('/inovasi', { params: { tahun, tahap, limit: 0 } })
+    const body = response.data
+    const items = (Array.isArray(body) ? body : body?.data ?? []) as Array<{
+      satker_id?: number | string
+      nama_satker?: string
+      satker?: { id?: number | string; nama_satker?: string }
+      status?: string
+      status_tahap2?: string | null
+    }>
+    const grouped = new Map<number, SatkerSubmissionSummary>()
+
+    for (const item of items) {
+      const satkerId = Number(item.satker_id ?? item.satker?.id)
+      if (!Number.isInteger(satkerId)) continue
+
+      const summary = grouped.get(satkerId) ?? {
+        satker_id: satkerId,
+        nama_satker: item.nama_satker || item.satker?.nama_satker || 'Satker tidak diketahui',
+        jumlah_usulan: 0,
+        jumlah_perlu_perbaikan: 0,
+      }
+      summary.jumlah_usulan += 1
+      if ((tahap === 2 ? item.status_tahap2 ?? item.status : item.status) === 'PERBAIKAN') {
+        summary.jumlah_perlu_perbaikan += 1
+      }
+      grouped.set(satkerId, summary)
+    }
+
+    return {
+      ...response,
+      data: [...grouped.values()].sort((a, b) => b.jumlah_usulan - a.jumlah_usulan || a.nama_satker.localeCompare(b.nama_satker, 'id')),
+    }
+  }
+}
 
 export const getUsulanList = (params?: {
   page?: number

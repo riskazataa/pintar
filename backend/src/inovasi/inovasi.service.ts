@@ -107,10 +107,23 @@ export class InovasiService {
     }
 
     if (search) {
-      where.OR = [
+      const searchConditions: Prisma.InovasiWhereInput[] = [
         { judul: { contains: search, mode: 'insensitive' } },
+        { deskripsi_inovasi: { contains: search, mode: 'insensitive' } },
         { pic_nama: { contains: search, mode: 'insensitive' } },
+        { pic_telp: { contains: search, mode: 'insensitive' } },
+        { jenis_inovasi: { contains: search, mode: 'insensitive' } },
+        { jenis_inovasi_lainnya: { contains: search, mode: 'insensitive' } },
+        { link_data_dukung: { contains: search, mode: 'insensitive' } },
+        { kriteria_inovasi: { has: search } },
+        { satker: { is: { nama_satker: { contains: search, mode: 'insensitive' } } } },
+        { user: { is: { nama_lengkap: { contains: search, mode: 'insensitive' } } } },
+        { user: { is: { email: { contains: search, mode: 'insensitive' } } } },
       ];
+      if (/^\d+$/.test(search)) {
+        searchConditions.push({ tahun: Number(search) });
+      }
+      where.OR = searchConditions;
     }
 
     if (start_date || end_date) {
@@ -1250,6 +1263,66 @@ export class InovasiService {
       },
       include: this.includeConfig,
     });
+  }
+
+  async getSatkerSubmissionSummary(
+    user: { role: string },
+    tahun: number,
+    tahap = 1,
+  ) {
+    if (!['SUPER_ADMIN', 'REVIEWER'].includes(user.role)) {
+      throw new ForbiddenException('Anda tidak memiliki akses ke rekap usulan satker.');
+    }
+    if (![1, 2].includes(tahap)) {
+      throw new BadRequestException('Tahap penilaian tidak valid.');
+    }
+
+    const periodStart = new Date(Date.UTC(tahun, 0, 1));
+    const periodEnd = new Date(Date.UTC(tahun + 1, 0, 1));
+    const where: Prisma.InovasiWhereInput = {
+      status: tahap === 2 ? StatusInovasi.SELESAI_EVALUASI : { not: StatusInovasi.DRAFT },
+      submitted_at: { gte: periodStart, lt: periodEnd },
+    };
+    const revisionWhere: Prisma.InovasiWhereInput = {
+      ...where,
+      ...(tahap === 2
+        ? { status_tahap2: StatusInovasi.PERBAIKAN }
+        : { status: StatusInovasi.PERBAIKAN }),
+    };
+
+    const [submissionGroups, revisionGroups] = await Promise.all([
+      this.prisma.inovasi.groupBy({
+        by: ['satker_id'],
+        where,
+        _count: { _all: true },
+      }),
+      this.prisma.inovasi.groupBy({
+        by: ['satker_id'],
+        where: revisionWhere,
+        _count: { _all: true },
+      }),
+    ]);
+
+    const satkerIds = submissionGroups.map(({ satker_id }) => satker_id);
+    if (satkerIds.length === 0) return [];
+
+    const satkers = await this.prisma.satker.findMany({
+      where: { id: { in: satkerIds } },
+      select: { id: true, nama_satker: true },
+    });
+    const satkerNames = new Map(satkers.map(({ id, nama_satker }) => [id, nama_satker]));
+    const revisionsBySatker = new Map(
+      revisionGroups.map(({ satker_id, _count }) => [satker_id, _count._all]),
+    );
+
+    return submissionGroups
+      .map(({ satker_id, _count }) => ({
+        satker_id,
+        nama_satker: satkerNames.get(satker_id) ?? 'Satker tidak diketahui',
+        jumlah_usulan: _count._all,
+        jumlah_perlu_perbaikan: revisionsBySatker.get(satker_id) ?? 0,
+      }))
+      .sort((a, b) => b.jumlah_usulan - a.jumlah_usulan || a.nama_satker.localeCompare(b.nama_satker, 'id'));
   }
 
   async getStats(user: {

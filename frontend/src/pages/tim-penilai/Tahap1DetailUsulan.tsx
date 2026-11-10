@@ -174,7 +174,7 @@ export default function Tahap1DetailUsulan({ backPath = '/tim-penilai/usulan' }:
               </p>
             )}
             {data.assessment_answers && data.assessment_answers.length > 0 ? (
-              <div className="overflow-x-auto rounded-xl border border-gray-200 bg-white">
+              <div className="w-full">
                 <BAAnswerGrid
                   questionTitle={questionTitle}
                   answers={data.assessment_answers}

@@ -10,6 +10,7 @@ interface TableToolbarProps {
   onSortOrderChange: (value: TableSortOrder) => void
   onClearFilters?: () => void
   children?: ReactNode
+  actions?: ReactNode
 }
 
 export default function TableToolbar({
@@ -20,6 +21,7 @@ export default function TableToolbar({
   onSortOrderChange,
   onClearFilters,
   children,
+  actions,
 }: TableToolbarProps) {
   const [filtersOpen, setFiltersOpen] = useState(false)
 
@@ -52,6 +54,7 @@ export default function TableToolbar({
           Filter
           {(children || sortOrder !== 'desc') && <span className="h-1.5 w-1.5 rounded-full bg-violet-500" />}
         </button>
+        {actions}
       </div>
 
       {filtersOpen && (

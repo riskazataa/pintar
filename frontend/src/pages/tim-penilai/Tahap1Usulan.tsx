@@ -1,7 +1,7 @@
 import { useEffect, useState, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import axios from 'axios'
-import { getUsulanList } from '../../services/inovasi.service'
+import { getSatkerSubmissionSummary, getUsulanList, type SatkerSubmissionSummary } from '../../services/inovasi.service'
 import { getSatker } from '../../services/satker.service'
 import { getStatusPresentation } from '../../utils/inovasi-status'
 import TablePagination from '../../components/TablePagination'
@@ -54,6 +54,10 @@ export default function Tahap1Usulan({ tahap = 1 }: { tahap?: number }) {
   const navigate = useNavigate()
 
   const [data, setData] = useState<UsulanItem[]>([])
+  const [satkerSummary, setSatkerSummary] = useState<SatkerSubmissionSummary[]>([])
+  const [summaryLoading, setSummaryLoading] = useState(false)
+  const [summaryError, setSummaryError] = useState('')
+  const [summaryOpen, setSummaryOpen] = useState(false)
   const [meta, setMeta] = useState<PaginationMeta>({ page: 1, limit: 10, total: 0, totalPages: 0 })
   const [limit, setLimit] = useState(10)
   const [loading, setLoading] = useState(true)
@@ -103,6 +107,41 @@ export default function Tahap1Usulan({ tahap = 1 }: { tahap?: number }) {
   }, [fetchList])
 
   useEffect(() => {
+    if (!selectedYear) {
+      setSatkerSummary([])
+      return
+    }
+    let cancelled = false
+    setSummaryLoading(true)
+    setSummaryError('')
+    getSatkerSubmissionSummary(Number(selectedYear), tahap)
+      .then((response) => {
+        if (!cancelled) setSatkerSummary(Array.isArray(response.data) ? response.data : [])
+      })
+      .catch((err: unknown) => {
+        if (cancelled) return
+        setSatkerSummary([])
+        setSummaryError(axios.isAxiosError(err) ? err.response?.data?.message || 'Gagal memuat rekap satker' : 'Gagal memuat rekap satker')
+      })
+      .finally(() => { if (!cancelled) setSummaryLoading(false) })
+    return () => { cancelled = true }
+  }, [selectedYear, tahap])
+
+  useEffect(() => {
+    if (!summaryOpen) return
+    const previousOverflow = document.body.style.overflow
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setSummaryOpen(false)
+    }
+    document.body.style.overflow = 'hidden'
+    document.addEventListener('keydown', closeOnEscape)
+    return () => {
+      document.body.style.overflow = previousOverflow
+      document.removeEventListener('keydown', closeOnEscape)
+    }
+  }, [summaryOpen])
+
+  useEffect(() => {
     getSatker()
       .then((response) => setSatkerOptions(Array.isArray(response.data) ? response.data : response.data?.data ?? []))
       .catch(() => setSatkerOptions([]))
@@ -134,7 +173,12 @@ export default function Tahap1Usulan({ tahap = 1 }: { tahap?: number }) {
       <YearSelect value={selectedYear} placeholder="Pilih tahun" onChange={(year) => { setData([]); setLoading(Boolean(year)); setSelectedYear(year); setPage(1) }} />
 
       {selectedYear ? <>
-      <TableToolbar search={search} onSearchChange={(value) => { setSearch(value); setPage(1) }} searchPlaceholder="Cari inovasi / PIC..." sortOrder={sortOrder} onSortOrderChange={(value) => { setSortOrder(value); setPage(1) }}>
+      <TableToolbar search={search} onSearchChange={(value) => { setSearch(value); setPage(1) }} searchPlaceholder="Cari inovasi, unit, PIC, atau tahun..." sortOrder={sortOrder} onSortOrderChange={(value) => { setSortOrder(value); setPage(1) }} actions={
+        <button type="button" onClick={() => setSummaryOpen(true)} className="inline-flex h-9 items-center gap-2 rounded-md bg-gradient-to-r from-teal-600 to-cyan-600 px-3 text-sm font-semibold text-white shadow-sm shadow-teal-200 transition hover:from-teal-700 hover:to-cyan-700 focus:outline-none focus:ring-2 focus:ring-teal-300 focus:ring-offset-2">
+          <svg aria-hidden="true" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth={1.8} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M4 19.5V14m5 5.5V9m5 10.5V4m5 15.5v-8" /><path strokeLinecap="round" strokeLinejoin="round" d="M2.5 20.5h19" /></svg>
+          Rekap Satker
+        </button>
+      }>
         <label className="block text-xs font-medium text-slate-500">Status
           <select value={statusFilter} onChange={(e) => { setStatusFilter(e.target.value); setPage(1) }} className="mt-1 h-9 w-full rounded-md border border-slate-200 bg-white px-2.5 text-sm text-slate-700 outline-none transition focus:border-violet-300 focus:ring-2 focus:ring-violet-100">
             {STATUS_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
@@ -153,6 +197,72 @@ export default function Tahap1Usulan({ tahap = 1 }: { tahap?: number }) {
           </select>
         </label>
       </TableToolbar>
+
+      {summaryOpen && <div className="fixed inset-0 z-[100] flex items-center justify-center overflow-y-auto bg-slate-950/50 p-3 backdrop-blur-sm sm:p-5" onMouseDown={(event) => { if (event.target === event.currentTarget) setSummaryOpen(false) }}>
+        <section role="dialog" aria-modal="true" aria-labelledby="satker-summary-title" className="my-auto flex max-h-[min(92dvh,780px)] w-full max-w-4xl flex-col overflow-hidden rounded-2xl border border-white/70 bg-white shadow-2xl shadow-slate-950/30">
+          <header className="relative shrink-0 overflow-hidden bg-gradient-to-r from-teal-700 via-emerald-600 to-cyan-600 px-5 py-5 text-white sm:px-7">
+            <div aria-hidden="true" className="absolute -right-8 -top-16 h-48 w-48 rounded-full bg-white/10" />
+            <div className="relative flex items-start justify-between gap-4">
+              <div className="flex items-start gap-3">
+                <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-white/15 ring-1 ring-white/25">
+                  <svg aria-hidden="true" className="h-6 w-6" fill="none" stroke="currentColor" strokeWidth={1.8} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M4 19.5V14m5 5.5V9m5 10.5V4m5 15.5v-8" /><path strokeLinecap="round" strokeLinejoin="round" d="M2.5 20.5h19" /></svg>
+                </span>
+                <div>
+                  <h2 id="satker-summary-title" className="text-lg font-semibold sm:text-xl">Rekap Usulan per Satker</h2>
+                  <p className="mt-1 text-sm text-teal-50">Tahun pengajuan {selectedYear}{tahap === 2 ? ' · Penilaian Tahap 2' : ' · Seleksi Awal'}</p>
+                </div>
+              </div>
+              <button type="button" aria-label="Tutup rekap" onClick={() => setSummaryOpen(false)} className="rounded-lg p-2 text-white/80 transition hover:bg-white/15 hover:text-white focus:outline-none focus:ring-2 focus:ring-white/70">
+                <svg aria-hidden="true" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24"><path strokeLinecap="round" d="m6 6 12 12M18 6 6 18" /></svg>
+              </button>
+            </div>
+          </header>
+
+          {summaryError ? <div className="m-5 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">{summaryError}</div> : summaryLoading ? (
+            <div className="px-6 py-14 text-center text-sm text-slate-500">Memuat rekap satker...</div>
+          ) : satkerSummary.length === 0 ? (
+            <div className="px-6 py-14 text-center text-sm text-slate-500">Belum ada usulan yang masuk pada tahun ini.</div>
+          ) : <>
+            <div className="grid shrink-0 gap-3 border-b border-slate-100 bg-gradient-to-b from-slate-50 to-white px-5 py-4 sm:grid-cols-3 sm:px-7">
+              <div className="flex items-center gap-3 rounded-xl border border-teal-100 bg-teal-50 p-3.5">
+                <span className="flex h-10 w-10 items-center justify-center rounded-lg bg-teal-600 text-sm font-bold text-white">{satkerSummary.length}</span>
+                <div><div className="text-xs font-medium uppercase tracking-wide text-teal-800">Satker mengusulkan</div><div className="mt-0.5 text-sm text-teal-700">unit aktif</div></div>
+              </div>
+              <div className="flex items-center gap-3 rounded-xl border border-blue-100 bg-blue-50 p-3.5">
+                <span className="flex h-10 w-10 items-center justify-center rounded-lg bg-blue-600 text-sm font-bold text-white">{satkerSummary.reduce((total, satker) => total + satker.jumlah_usulan, 0)}</span>
+                <div><div className="text-xs font-medium uppercase tracking-wide text-blue-800">Total inovasi</div><div className="mt-0.5 text-sm text-blue-700">usulan masuk</div></div>
+              </div>
+              <div className="flex items-center gap-3 rounded-xl border border-amber-100 bg-amber-50 p-3.5">
+                <span className="flex h-10 w-10 items-center justify-center rounded-lg bg-amber-500 text-sm font-bold text-white">{satkerSummary.reduce((total, satker) => total + satker.jumlah_perlu_perbaikan, 0)}</span>
+                <div><div className="text-xs font-medium uppercase tracking-wide text-amber-800">Perlu perbaikan</div><div className="mt-0.5 text-sm text-amber-700">usulan dikembalikan</div></div>
+              </div>
+            </div>
+            <div className="min-h-0 flex-1 overflow-auto">
+              <table className="w-full min-w-[600px] text-left text-sm">
+                <thead className="sticky top-0 z-10 bg-slate-50 text-xs font-semibold uppercase tracking-wide text-slate-500">
+                  <tr><th className="px-5 py-3.5 sm:px-7">Satker</th><th className="px-5 py-3.5 text-center">Jumlah inovasi</th><th className="px-5 py-3.5 text-center">Perlu perbaikan</th><th className="px-5 py-3.5 text-right sm:px-7">Aksi</th></tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {satkerSummary.map((satker) => (
+                    <tr key={satker.satker_id} className="transition-colors hover:bg-teal-50/50">
+                      <td className="px-5 py-3.5 font-medium text-slate-800 sm:px-7">{satker.nama_satker}</td>
+                      <td className="px-5 py-3.5 text-center tabular-nums"><span className="inline-flex min-w-9 justify-center rounded-full bg-blue-50 px-2.5 py-1 font-semibold text-blue-700">{satker.jumlah_usulan}</span></td>
+                      <td className="px-5 py-3.5 text-center tabular-nums"><span className={`inline-flex min-w-9 justify-center rounded-full px-2.5 py-1 font-semibold ${satker.jumlah_perlu_perbaikan > 0 ? 'bg-amber-100 text-amber-800' : 'bg-slate-100 text-slate-500'}`}>{satker.jumlah_perlu_perbaikan}</span></td>
+                      <td className="px-5 py-3.5 text-right sm:px-7">
+                        <button onClick={() => { setSatkerFilter(String(satker.satker_id)); setStatusFilter(''); setPage(1); setSummaryOpen(false) }} className="text-xs font-semibold text-teal-700 hover:text-teal-900">Lihat usulan</button>
+                        {satker.jumlah_perlu_perbaikan > 0 && <button onClick={() => { setSatkerFilter(String(satker.satker_id)); setStatusFilter('PERBAIKAN'); setPage(1); setSummaryOpen(false) }} className="ml-3 text-xs font-semibold text-amber-700 hover:text-amber-900">Lihat perbaikan</button>}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <footer className="flex shrink-0 justify-end border-t border-slate-100 bg-slate-50/80 px-5 py-3.5 sm:px-7">
+              <button type="button" onClick={() => setSummaryOpen(false)} className="h-9 rounded-lg border border-slate-200 bg-white px-4 text-sm font-medium text-slate-700 transition hover:bg-slate-100">Tutup</button>
+            </footer>
+          </>}
+        </section>
+      </div>}
 
       {error && <div className="rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>}
 
