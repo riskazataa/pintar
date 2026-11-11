@@ -409,6 +409,72 @@ export class InovasiService {
     });
   }
 
+  async assignPenilaiBulk(inovasiIds: number[], penilaiIds: number[], tahap = 1) {
+    this.validateTahap(tahap);
+    if (!Array.isArray(inovasiIds) || !inovasiIds.length || inovasiIds.length > 200 || inovasiIds.some((id) => !Number.isInteger(id)) || new Set(inovasiIds).size !== inovasiIds.length) {
+      throw new BadRequestException('Pilih maksimal 200 usulan yang valid');
+    }
+    if (!Array.isArray(penilaiIds) || !penilaiIds.length || penilaiIds.some((id) => !Number.isInteger(id)) || new Set(penilaiIds).size !== penilaiIds.length) {
+      throw new BadRequestException('Pilih penilai yang valid');
+    }
+
+    return this.prisma.$transaction(async (tx) => {
+      const [inovasiList, users] = await Promise.all([
+        tx.inovasi.findMany({
+          where: { id: { in: inovasiIds } },
+          select: {
+            id: true,
+            status: true,
+            penilai: { select: { id: true } },
+            penilai_tahap2: { select: { id: true } },
+            usulan_signatures: {
+              where: { tahap },
+              select: { user_id: true },
+            },
+          },
+        }),
+        tx.user.findMany({
+          where: { id: { in: penilaiIds }, role: 'REVIEWER', status_registrasi: 'APPROVED' },
+          select: { id: true },
+        }),
+      ]);
+
+      if (inovasiList.length !== inovasiIds.length) {
+        throw new NotFoundException('Beberapa usulan tidak ditemukan');
+      }
+      if (users.length !== penilaiIds.length) {
+        throw new NotFoundException('Beberapa user penilai tidak ditemukan atau belum aktif');
+      }
+
+      const requestedReviewerIds = new Set(penilaiIds);
+      for (const inovasi of inovasiList) {
+        if (tahap === 2 && inovasi.status !== StatusInovasi.SELESAI_EVALUASI) {
+          throw new BadRequestException('Tahap 2 hanya dapat ditugaskan pada usulan yang sudah menyelesaikan Tahap 1');
+        }
+        const currentReviewerIds = new Set(
+          (tahap === 2 ? inovasi.penilai_tahap2 : inovasi.penilai).map((reviewer) => reviewer.id),
+        );
+        if (inovasi.usulan_signatures.length) {
+          if (penilaiIds.some((id) => !currentReviewerIds.has(id))) {
+            throw new BadRequestException(`Usulan #${inovasi.id} sudah memiliki tanda tangan; penilai baru tidak dapat ditambahkan`);
+          }
+          if (inovasi.usulan_signatures.some((signature) => !requestedReviewerIds.has(signature.user_id))) {
+            throw new BadRequestException(`Usulan #${inovasi.id} sudah memiliki tanda tangan; penilai yang menandatangani tidak dapat dihapus`);
+          }
+        }
+      }
+
+      const relation = tahap === 2 ? 'penilai_tahap2' : 'penilai';
+      for (const inovasiId of inovasiIds) {
+        await tx.inovasi.update({
+          where: { id: inovasiId },
+          data: { [relation]: { set: penilaiIds.map((id) => ({ id })) } },
+        });
+      }
+      return { updated: inovasiIds.length, tahap };
+    });
+  }
+
   async getPenilaiList(inovasiId: number) {
     const penilai = await this.prisma.inovasi.findUnique({
       where: { id: inovasiId },
@@ -663,6 +729,8 @@ export class InovasiService {
     if (user.role === 'UNIT' && existing.satker_id !== user.satker_id) {
       throw new ForbiddenException('Anda tidak memiliki akses ke inovasi ini');
     }
+
+    if (user.role === 'UNIT') await this.assertSubmissionIsUnlocked();
 
     const assessment_answers = dto.assessment_answers;
     await this.validateSelfAssessmentSubmission(assessment_answers ?? []);
@@ -1331,9 +1399,13 @@ export class InovasiService {
     satker_id?: number | null;
   }, tahun = new Date().getFullYear()) {
     const shouldFilterBySatker = user.role === 'UNIT' && !!user.satker_id;
-    const where: Prisma.InovasiWhereInput = shouldFilterBySatker
-      ? { satker_id: user.satker_id!, tahun, status: { not: StatusInovasi.DRAFT } }
-      : { tahun, status: { not: StatusInovasi.DRAFT } };
+    const periodStart = new Date(Date.UTC(tahun, 0, 1));
+    const periodEnd = new Date(Date.UTC(tahun + 1, 0, 1));
+    const where: Prisma.InovasiWhereInput = {
+      ...(shouldFilterBySatker ? { satker_id: user.satker_id! } : {}),
+      status: { not: StatusInovasi.DRAFT },
+      submitted_at: { gte: periodStart, lt: periodEnd },
+    };
 
     const [
       total_usulan,
@@ -1368,7 +1440,7 @@ export class InovasiService {
       this.prisma.inovasi.findMany({
         where,
         select: {
-          created_at: true,
+          submitted_at: true,
           status: true,
           status_tahap2: true,
           penilai: { select: { id: true } },
@@ -1418,8 +1490,8 @@ export class InovasiService {
     }
 
     for (const item of chartTahapRows) {
-      const monthKey = item.created_at.toISOString().slice(0, 7);
-      const monthStats = timelineByMonth.get(monthKey);
+      const monthKey = item.submitted_at?.toISOString().slice(0, 7);
+      const monthStats = monthKey ? timelineByMonth.get(monthKey) : undefined;
       if (monthStats) {
         monthStats.total_usulan++;
         if (statusPenilaian(item.status, item.penilai, item.usulan_signatures, 1) === 'LOLOS') {

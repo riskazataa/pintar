@@ -13,6 +13,7 @@ import AdminLayout from './layouts/AdminLayout'
 import Akun from './pages/admin/Akun'
 import Organisasi from './pages/admin/Organisasi'
 import PengaturanUsulan from './pages/admin/PengaturanUsulan'
+import PenugasanMassal from './pages/admin/PenugasanMassal'
 
 // Unit
 import SatkerLayout from './layouts/SatkerLayout'
@@ -47,6 +48,7 @@ function App() {
         <Route path="akun" element={<Akun />} />
         <Route path="organisasi" element={<Organisasi />} />
         <Route path="kunci-usulan" element={<PengaturanUsulan />} />
+        <Route path="penugasan" element={<PenugasanMassal />} />
       <Route path="management-ba" element={<ManagementBA />} />
         <Route path="profil" element={<Profile />} />
       </Route>

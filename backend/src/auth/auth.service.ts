@@ -268,7 +268,8 @@ export class AuthService {
   async getTimPenilai() {
     return this.prisma.user.findMany({
       where: {
-        role: { in: ['SUPER_ADMIN', 'REVIEWER'] },
+        role: 'REVIEWER',
+        status_registrasi: 'APPROVED',
       },
       select: {
         id: true,

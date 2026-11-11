@@ -268,6 +268,7 @@ export default function Tahap1Usulan({ tahap = 1 }: { tahap?: number }) {
           <table className="w-full text-left text-sm">
             <thead className="bg-gray-50 text-xs font-semibold uppercase text-gray-500">
               <tr>
+                <th className="w-14 border-b px-3 py-4 text-center sm:px-4">No</th>
                 <th className="border-b px-4 py-4 sm:px-6">Tanggal Masuk</th>
                 <th className="border-b px-4 py-4 sm:px-6">Unit</th>
                 <th className="border-b px-4 py-4 sm:px-6">Judul Inovasi</th>
@@ -279,7 +280,7 @@ export default function Tahap1Usulan({ tahap = 1 }: { tahap?: number }) {
             <tbody className="divide-y divide-gray-100">
               {loading ? (
                 <tr>
-                  <td colSpan={6} className="px-6 py-12 text-center text-sm text-gray-400">
+                  <td colSpan={7} className="px-6 py-12 text-center text-sm text-gray-400">
                     <svg className="h-5 w-5 animate-spin text-blue-600 mx-auto mb-2" fill="none" viewBox="0 0 24 24">
                       <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
                       <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"></path>
@@ -288,11 +289,12 @@ export default function Tahap1Usulan({ tahap = 1 }: { tahap?: number }) {
                   </td>
                 </tr>
               ) : data.length === 0 ? (
-                <tr><td colSpan={6} className="px-6 py-12 text-center text-sm text-gray-400">Belum ada usulan inovasi yang masuk</td></tr>
+                <tr><td colSpan={7} className="px-6 py-12 text-center text-sm text-gray-400">Belum ada usulan inovasi yang masuk</td></tr>
               ) : (
-                data.map((item) => {
+                data.map((item, index) => {
                   return (
                     <tr key={item.id} className="transition-colors hover:bg-blue-50/50">
+                      <td className="px-3 py-3.5 text-center tabular-nums text-gray-500 sm:px-4">{(page - 1) * limit + index + 1}</td>
                       <td className="whitespace-nowrap px-4 py-3.5 text-gray-600 sm:px-6">{formatDate(item.createdAt || item.created_at || item.tanggal_masuk)}</td>
                       <td className="px-4 py-3.5 text-gray-600 sm:px-6 font-medium text-blue-900">{item.nama_satker || item.satker?.nama_satker || item.user?.satker?.nama_satker || '-'}</td>
                       <td className="px-4 py-3.5 font-medium text-slate-800 sm:px-6">{item.judul || item.nama_inovasi}</td>

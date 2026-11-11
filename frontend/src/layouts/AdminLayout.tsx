@@ -15,6 +15,7 @@ const menuItems = [
   { to: '/admin/dashboard', label: 'Dashboard', icon: 'dashboard' },
   { to: '/admin/akun', label: 'Akun', icon: 'users' },
   { to: '/admin/organisasi', label: 'Organisasi', icon: 'building' },
+  { to: '/admin/penugasan', label: 'Penugasan Massal', icon: 'assign' },
   { to: '/admin/management-ba', label: 'Management BA Inovasi', icon: 'folder' },
   { to: '/admin/kunci-usulan', label: 'Kunci Usulan', icon: 'lock' },
 ]
@@ -44,6 +45,12 @@ function MenuIcon({ name }: { name: string }) {
       return (
         <svg className={cls} fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
           <path strokeLinecap="round" strokeLinejoin="round" d="M2.25 12.75V12A2.25 2.25 0 014.5 9.75h15A2.25 2.25 0 0121.75 12v.75m-8.69-6.44l-2.12-2.12a1.5 1.5 0 00-1.061-.44H4.5A2.25 2.25 0 002.25 6v12a2.25 2.25 0 002.25 2.25h15A2.25 2.25 0 0021.75 18V9a2.25 2.25 0 00-2.25-2.25h-5.379a1.5 1.5 0 01-1.06-.44z" />
+        </svg>
+      )
+    case 'assign':
+      return (
+        <svg className={cls} fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" d="M8 7.5h10.25A2.75 2.75 0 0 1 21 10.25v9A2.75 2.75 0 0 1 18.25 22H8a2.75 2.75 0 0 1-2.75-2.75v-9A2.75 2.75 0 0 1 8 7.5Zm-2 4H3.75A2.75 2.75 0 0 1 1 8.75v-5A2.75 2.75 0 0 1 3.75 1h8.5A2.75 2.75 0 0 1 15 3.75V7m-10 7 2 2 4-4m3 5h3m-3-4h3" />
         </svg>
       )
     case 'lock':

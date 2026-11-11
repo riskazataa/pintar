@@ -28,6 +28,7 @@ import { UpdateAssessmentPenilaiDto } from './dto/update-assessment-penilai.dto'
 import { UpdateAssessmentAnswersDto } from './dto/update-assessment-answers.dto';
 import { SignInovasiDto } from './dto/sign-inovasi.dto';
 import { SaveInovasiDraftDto } from './dto/save-inovasi-draft.dto';
+import { BulkAssignPenilaiDto } from './dto/bulk-assign-penilai.dto';
 
 @Controller('inovasi')
 export class InovasiController {
@@ -109,6 +110,13 @@ export class InovasiController {
     @Req() req: any,
   ) {
     return this.inovasiService.updateDraft(id, dto, req.user);
+  }
+
+  @Patch('assign/bulk')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('SUPER_ADMIN', 'REVIEWER')
+  async assignPenilaiBulk(@Body() dto: BulkAssignPenilaiDto) {
+    return this.inovasiService.assignPenilaiBulk(dto.inovasi_ids, dto.penilai_ids, dto.tahap);
   }
 
   @Patch(':id/assign')

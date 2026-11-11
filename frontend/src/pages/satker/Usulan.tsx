@@ -185,8 +185,12 @@ export default function Usulan() {
   const confirmSubmitPending = useRef(false)
   const [catatanPerbaikan, setCatatanPerbaikan] = useState('')
   const [detailUsulan, setDetailUsulan] = useState<any>(null)
-  const [submissionsLocked, setSubmissionsLocked] = useState(false)
+  const [submissionsLocked, setSubmissionsLocked] = useState<boolean | null>(null)
   const [submissionLockLoading, setSubmissionLockLoading] = useState(true)
+  const submissionBlocked = submissionLockLoading || submissionsLocked !== false
+  const submissionLockMessage = submissionsLocked === true
+    ? 'Pengiriman usulan sedang dikunci oleh Admin. Draft yang sudah ada tetap dapat diedit dan disimpan sebagai draft. Harap menghubungi Admin untuk membuka pengusulan.'
+    : 'Status penguncian belum dapat diperiksa. Submit dinonaktifkan sementara; draft yang sudah ada tetap dapat disimpan.'
   const canSaveDraft = !editingId || ['DRAFT', 'PERBAIKAN'].includes(detailUsulan?.status)
 
   useEffect(() => {
@@ -196,7 +200,7 @@ export default function Usulan() {
         const { data: setting } = await getSubmissionLock()
         if (!cancelled) setSubmissionsLocked(Boolean(setting.locked))
       } catch {
-        if (!cancelled) setSubmissionsLocked(false)
+        if (!cancelled) setSubmissionsLocked(null)
       } finally {
         if (!cancelled) setSubmissionLockLoading(false)
       }
@@ -289,8 +293,8 @@ export default function Usulan() {
   }
 
   const openCreate = () => {
-    if (submissionLockLoading || submissionsLocked) {
-      notify('Penambahan usulan sedang dikunci oleh Admin. Harap menghubungi Admin untuk membuka usulan.', 'warning')
+    if (submissionBlocked) {
+      notify(submissionLockMessage, 'warning')
       return
     }
     setEditingId(null); setStep(1); setNamaInovasi(''); setDeskripsiInovasi(''); setTahun(new Date().getFullYear().toString()); setJenisInovasi([]); setJenisPickerOpen(false); setKriteria([]); setLinkDataDukung(''); setPicContacts([{ nama: '', no_whatsapp: '' }]); setAnswers({}); setQuestions([]); setAssessmentColumns([]); setCatatanPerbaikan(''); setDetailUsulan(null); setFormErrors({}); setShowAssessmentErrors(false)
@@ -347,8 +351,8 @@ export default function Usulan() {
   }, [isEditPage])
 
   const handleSubmit = async () => {
-    if (!editingId && (submissionLockLoading || submissionsLocked)) {
-      notify('Penambahan usulan sedang dikunci oleh Admin. Harap menghubungi Admin untuk membuka usulan.', 'warning')
+    if (step === 1 && !editingId && submissionBlocked) {
+      notify(submissionLockMessage, 'warning')
       return
     }
     if (step === 1) {
@@ -371,6 +375,11 @@ export default function Usulan() {
       if (Object.keys(errors).length) { notify('Periksa kembali field yang ditandai merah.', 'warning'); return }
       if (!hasAssessmentQuestions) await loadQuestions()
       setStep(2)
+      return
+    }
+
+    if (submissionBlocked) {
+      notify(submissionLockMessage, 'warning')
       return
     }
 
@@ -424,8 +433,8 @@ export default function Usulan() {
   }
 
   const handleSaveDraft = async () => {
-    if (!editingId && (submissionLockLoading || submissionsLocked)) {
-      notify('Penambahan usulan sedang dikunci oleh Admin. Harap menghubungi Admin untuk membuka usulan.', 'warning')
+    if (!editingId && submissionBlocked) {
+      notify(submissionLockMessage, 'warning')
       return
     }
     setSavingDraft(true)
@@ -505,14 +514,15 @@ export default function Usulan() {
 
   return (
     <div className="space-y-6">
-      {submissionsLocked && <div role="status" className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">Penambahan usulan baru sedang dikunci oleh Admin. Usulan dan draft yang sudah ada tetap dapat diperbarui. Harap menghubungi Admin untuk membuka usulan.</div>}
+      {submissionsLocked === true && <div role="status" className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">{submissionLockMessage}</div>}
+      {submissionsLocked === null && !submissionLockLoading && <div role="status" className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">{submissionLockMessage}</div>}
       {!isFormPage && <>
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h2 className="text-lg font-semibold text-gray-800">Usulan Inovasi</h2>
           <p className="text-sm text-gray-500">Kelola usulan inovasi satuan kerja</p>
         </div>
-        <button onClick={openCreate} disabled={submissionLockLoading || submissionsLocked} title={submissionsLocked ? 'Penambahan usulan sedang dikunci oleh Admin. Harap menghubungi Admin untuk membuka usulan.' : undefined} className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2.5 text-sm font-medium text-white shadow-sm transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-blue-600">
+        <button onClick={openCreate} aria-disabled={submissionBlocked} title={submissionBlocked ? submissionLockMessage : undefined} className={`inline-flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2.5 text-sm font-medium text-white shadow-sm transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-blue-600 ${submissionBlocked ? 'cursor-not-allowed opacity-50 hover:bg-blue-600' : ''}`}>
           <svg className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" /></svg>
           Tambah Usulan
         </button>
@@ -754,8 +764,8 @@ export default function Usulan() {
                 {step === 2 && editingId && detailUsulan?.status !== 'DRAFT' && <button onClick={() => setStep(1)} disabled={saving || savingDraft} className="rounded-lg border px-4 py-2 text-sm font-medium text-gray-600 transition hover:bg-gray-50 disabled:opacity-60">Kembali</button>}
               </div>
               <div className="flex items-center gap-2">
-                {canSaveDraft && <button onClick={handleSaveDraft} disabled={saving || savingDraft || confirmingSubmit || (!editingId && (submissionLockLoading || submissionsLocked))} className="rounded-lg border border-blue-200 px-4 py-2 text-sm font-medium text-blue-700 transition hover:bg-blue-50 disabled:opacity-60">{savingDraft ? 'Menyimpan Draft...' : 'Simpan Draft'}</button>}
-                <button onClick={handleSubmit} disabled={saving || savingDraft || confirmingSubmit || questionsLoading || (step === 2 && !hasAssessmentQuestions) || (!editingId && (submissionLockLoading || submissionsLocked))} className="rounded-lg bg-blue-600 px-5 py-2 text-sm font-medium text-white transition hover:bg-blue-700 disabled:opacity-60">{saving ? 'Menyimpan...' : step === 1 ? 'Selanjutnya' : 'Submit Usulan'}</button>
+                {canSaveDraft && <button onClick={handleSaveDraft} aria-disabled={!editingId && submissionBlocked} disabled={saving || savingDraft || confirmingSubmit} className={`rounded-lg border border-blue-200 px-4 py-2 text-sm font-medium text-blue-700 transition hover:bg-blue-50 disabled:opacity-60 ${!editingId && submissionBlocked ? 'cursor-not-allowed opacity-60 hover:bg-white' : ''}`}>{savingDraft ? 'Menyimpan Draft...' : 'Simpan Draft'}</button>}
+                <button onClick={handleSubmit} aria-disabled={submissionBlocked && (step === 2 || !editingId)} disabled={saving || savingDraft || confirmingSubmit || (!submissionBlocked && (questionsLoading || (step === 2 && !hasAssessmentQuestions)))} title={submissionBlocked && (step === 2 || !editingId) ? submissionLockMessage : undefined} className={`rounded-lg bg-blue-600 px-5 py-2 text-sm font-medium text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60 ${submissionBlocked && (step === 2 || !editingId) ? 'cursor-not-allowed opacity-60 hover:bg-blue-600' : ''}`}>{saving ? 'Menyimpan...' : step === 1 ? 'Selanjutnya' : 'Submit Usulan'}</button>
               </div>
             </div>
           </div>

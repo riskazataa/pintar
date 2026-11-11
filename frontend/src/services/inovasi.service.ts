@@ -111,6 +111,9 @@ export const assignPenilai = (id: string | number, penilaiIds: (string | number)
   return api.patch(`/inovasi/${id}/assign`, { penilai_ids: penilaiIds }, { params: { tahap } });
 }
 
+export const assignPenilaiBulk = (inovasiIds: number[], penilaiIds: number[], tahap = 1) =>
+  api.patch('/inovasi/assign/bulk', { inovasi_ids: inovasiIds, penilai_ids: penilaiIds, tahap })
+
 export const savePenilaian = (id: string | number, answers: any[], tahap = 1) =>
   api.patch(`/inovasi/${id}/assessment-penilai`, { answers }, { params: { tahap } })
 
