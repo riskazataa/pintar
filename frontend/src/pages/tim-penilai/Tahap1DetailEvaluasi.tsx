@@ -18,6 +18,7 @@ import { useNotifications } from '../../components/NotificationProvider';
 import { formatJenisInovasi } from '../../utils/jenis-inovasi';
 import { normalizeKriteriaInovasi } from '../../utils/kriteria-inovasi';
 import { getReviewerStageName } from '../../utils/tahap-reviewer';
+import RevisionHistory from '../../components/RevisionHistory';
 
 function getUser() {
   try {
@@ -180,7 +181,7 @@ export default function Tahap1DetailEvaluasi({ tahap = 1, onUpdated }: { tahap?:
     try {
       await kembalikanUsulan(id, alasanPerbaikan.trim());
       notify('Usulan dikembalikan untuk perbaikan.', 'success');
-      navigate(`/tim-penilai/usulan/${id}`);
+      navigate(`/tim-penilai/penilaian/${id}`);
     } catch (err) {
       notify('Gagal mengembalikan usulan.', 'error');
     } finally {
@@ -191,6 +192,7 @@ export default function Tahap1DetailEvaluasi({ tahap = 1, onUpdated }: { tahap?:
 
   if (loading) return <div className="flex items-center justify-center min-h-[400px] text-gray-500 font-medium">Memuat detail inovasi...</div>;
   if (!data) return <div className="flex items-center justify-center min-h-[400px] text-rose-500 font-medium">Data tidak ditemukan.</div>;
+  const waitingForSatker = data.status === 'PERBAIKAN';
 
   return (
     <div className="max-w-7xl mx-auto space-y-6 pb-12">
@@ -206,7 +208,7 @@ export default function Tahap1DetailEvaluasi({ tahap = 1, onUpdated }: { tahap?:
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between rounded-2xl bg-white p-6 shadow-sm border border-gray-100 transition-all">
         <div className="flex items-center gap-4">
           <button
-            onClick={() => navigate(`/tim-penilai/usulan/${id}`)}
+            onClick={() => navigate(`/tim-penilai/penilaian/${id}`)}
             className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-gray-50 text-gray-500 hover:bg-gray-100 hover:text-gray-700 transition-colors"
           >
             <svg className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
@@ -222,6 +224,12 @@ export default function Tahap1DetailEvaluasi({ tahap = 1, onUpdated }: { tahap?:
           {getStatusPresentation(data, tahap).label}
         </div>
       </div>
+
+      {waitingForSatker && <div role="status" className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
+        <p className="font-semibold">Menunggu perbaikan dari Satker</p>
+        <p className="mt-1">Penilaian dan tanda tangan reviewer tidak dapat diubah sampai Satker mengirimkan kembali usulan.</p>
+      </div>}
+      <RevisionHistory logs={data.revision_logs ?? []} fallbackNote={waitingForSatker ? data.catatan_perbaikan : null} />
 
       <div className="grid grid-cols-1 gap-6 items-start">
         {/* KOLOM KIRI (Info Utama & Unit) */}
@@ -343,6 +351,7 @@ export default function Tahap1DetailEvaluasi({ tahap = 1, onUpdated }: { tahap?:
 
           {/* Tombol Aksi */}
           <div className="flex flex-wrap items-center justify-end gap-3 p-5 bg-white rounded-2xl border border-gray-100 shadow-sm">
+            {waitingForSatker ? <span className="mr-auto text-sm font-medium text-amber-800">Perubahan terkunci sampai Satker mengirim ulang.</span> : <>
             {!isEditing ? (
               <button
                 onClick={() => {
@@ -386,6 +395,7 @@ export default function Tahap1DetailEvaluasi({ tahap = 1, onUpdated }: { tahap?:
             >
               Kembalikan (Perbaikan)
             </button>}
+            </>}
           </div>
         </div>
       </div>
@@ -458,7 +468,7 @@ export default function Tahap1DetailEvaluasi({ tahap = 1, onUpdated }: { tahap?:
             String(u.id || u.user_id) === String(currentUser?.id)
         ) && !data.signatures?.some(
           (s: any) => String(s.user_id) === String(currentUser?.id)
-        ) && (
+        ) && !waitingForSatker && (
           tahap === 2 ? <div className="mt-6 border-t border-gray-100 pt-6"><FinalSignatureForm id={id!} satker={data.satker} disabled={isEditing || changed || data.requires_assessment_save} onSigned={async () => { const res = await getUsulanDetail(id!, 2); const detail = res.data?.data ?? res.data; setData(detail); initLocalAnswers(detail.assessment_answers ?? []); onUpdated?.() }} /></div> : <div className="mt-6 border-t border-gray-100 pt-6">
             <div className="mb-5 flex items-start gap-3">
               <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-blue-50 text-blue-600">

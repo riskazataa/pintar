@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import axios from 'axios'
-import { getUsulanDetail, getAkunTimPenilai, assignPenilai, downloadHasilEvaluasiPdf, getBAColumns } from '../../services/inovasi.service'
+import { getUsulanDetail, downloadHasilEvaluasiPdf, getBAColumns } from '../../services/inovasi.service'
 import { getStatusPresentation } from '../../utils/inovasi-status'
 import { getReviewerStageName } from '../../utils/tahap-reviewer'
 import Tahap1DetailEvaluasi from './Tahap1DetailEvaluasi'
@@ -18,12 +18,9 @@ export default function InnovationWorkflow() {
   const { id, section } = useParams()
   const [data, setData] = useState<any>(null)
   const [stage2, setStage2] = useState<any>(null)
-  const [users, setUsers] = useState<any[]>([])
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
   const [version, setVersion] = useState(0)
-  const [assignment, setAssignment] = useState<number | null>(null)
-  const [selected, setSelected] = useState<number[]>([])
   const [openActions, setOpenActions] = useState<number | null>(null)
   const [openExport, setOpenExport] = useState(false)
   const actionMenuRef = useRef<HTMLDivElement>(null)
@@ -45,7 +42,6 @@ export default function InnovationWorkflow() {
     }
   }, [id])
   useEffect(() => { load() }, [load, section])
-  useEffect(() => { getAkunTimPenilai().then((res) => setUsers(res.data?.data ?? res.data ?? [])).catch(() => setUsers([])) }, [])
   useEffect(() => {
     if (openActions === null) return
     const closeOnOutsideClick = (event: MouseEvent) => {
@@ -64,13 +60,6 @@ export default function InnovationWorkflow() {
       document.removeEventListener('keydown', closeOnEscape)
     }
   }, [openActions])
-  const saveAssignment = async () => {
-    if (!id || !assignment) return
-    setBusy(true)
-    try { await assignPenilai(id, selected, assignment); setAssignment(null); await load() }
-    catch (err) { setError(axios.isAxiosError(err) ? err.response?.data?.message || 'Gagal menyimpan penugasan' : 'Gagal menyimpan penugasan') }
-    finally { setBusy(false) }
-  }
   const download = async (tahap: number, format: 'pdf' | 'excel') => {
     if (!id) return
     setBusy(true)
@@ -87,16 +76,11 @@ export default function InnovationWorkflow() {
     finally { setBusy(false) }
   }
   if (!data) return <div className="rounded-2xl border bg-white p-8">{error || 'Memuat inovasi...'}</div>
-  const base = `/tim-penilai/usulan/${id}`
+  const base = `/tim-penilai/penilaian/${id}`
   const stageRows = [
     { tahap: 1, title: getReviewerStageName(1), detail: data, locked: false },
     { tahap: 2, title: getReviewerStageName(2), detail: stage2, locked: data.status !== 'SELESAI_EVALUASI' },
   ]
-  const assignmentDetail = assignment ? stageRows[assignment - 1].detail : null
-  const assignmentReviewers = new Set((assignmentDetail?.penilai ?? []).map((r: any) => Number(r.id)))
-  const assignmentSigners = new Set((assignmentDetail?.usulan_signatures ?? []).map((signature: any) => Number(signature.user_id)))
-  const assignmentUsers = [...users, ...(assignmentDetail?.penilai ?? []).filter((reviewer: any) => !users.some((user) => String(user.id) === String(reviewer.id)))]
-  const availableAssignmentUsers = assignmentUsers.filter((user) => !selected.includes(Number(user.id)))
   if (section === 'self-assessment') return <Tahap1DetailUsulan backPath={base} />
   if (section === 'tahap-1') return <Tahap1DetailEvaluasi key={`${id}-1-${version}`} tahap={1} onUpdated={load} />
   if (section === 'tahap-2') {
@@ -105,7 +89,7 @@ export default function InnovationWorkflow() {
     return <Tahap1DetailEvaluasi key={`${id}-2-${version}`} tahap={2} onUpdated={load} />
   }
   return <div className="space-y-6 pb-8">
-    <BackLink to="/tim-penilai/usulan">Daftar inovasi</BackLink>
+    <BackLink to="/tim-penilai/penilaian">Daftar penilaian</BackLink>
     <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
       <p className="text-xs font-semibold uppercase tracking-wide text-violet-600">Alur Penilaian Inovasi</p>
       <h1 className="mt-2 text-2xl font-bold text-slate-900">{data.judul}</h1>
@@ -137,10 +121,6 @@ export default function InnovationWorkflow() {
                     <svg aria-hidden="true" className="h-5 w-5" fill="currentColor" viewBox="0 0 24 24"><circle cx="5" cy="12" r="1.8"/><circle cx="12" cy="12" r="1.8"/><circle cx="19" cy="12" r="1.8"/></svg>
                   </button>
                   {openActions === tahap && <div role="menu" className="absolute right-0 top-11 z-30 w-52 rounded-xl border border-slate-200 bg-white p-1.5 shadow-xl">
-                    <button type="button" role="menuitem" onClick={() => { setAssignment(tahap); setSelected(reviewers.map((r: any) => Number(r.id))); setOpenActions(null) }} className="flex w-full items-center gap-2.5 rounded-lg px-3 py-2.5 text-left text-sm font-medium text-slate-700 transition hover:bg-violet-50 hover:text-violet-700">
-                      <svg aria-hidden="true" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth={1.8} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M16 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2m12-13a4 4 0 1 1-8 0 4 4 0 0 1 8 0Zm4 3v6m3-3h-6" /></svg>Atur Penilai
-                    </button>
-                    <div className="my-1.5 border-t border-slate-100" />
                     <button type="button" aria-haspopup="menu" aria-expanded={openExport} onClick={() => setOpenExport((value) => !value)} className="flex w-full items-center justify-between rounded-lg px-3 py-2.5 text-left text-sm font-medium text-slate-700 transition hover:bg-slate-50">
                       <span className="flex items-center gap-2.5"><svg aria-hidden="true" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth={1.8} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M12 3v12m0 0 4-4m-4 4-4-4M4 17v3h16v-3" /></svg>Ekspor</span>
                       <svg aria-hidden="true" className={`h-4 w-4 transition-transform ${openExport ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="m6 9 6 6 6-6" /></svg>
@@ -158,21 +138,5 @@ export default function InnovationWorkflow() {
         </tbody>
       </table>
     </div>
-    {assignment && <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-slate-950/45 p-4 backdrop-blur-[2px]" onMouseDown={(event) => { if (event.target === event.currentTarget) setAssignment(null) }}>
-      <section role="dialog" aria-modal="true" aria-labelledby="assignment-modal-title" className="my-auto w-full max-w-3xl rounded-3xl bg-white p-6 shadow-2xl sm:p-9">
-        <div className="mb-7 flex items-start justify-between border-b border-slate-200 pb-5">
-          <h2 id="assignment-modal-title" className="text-xl font-semibold text-slate-800 sm:text-2xl">Atur Penilai · {assignment ? getReviewerStageName(assignment) : ''}</h2>
-          <button onClick={() => setAssignment(null)} aria-label="Tutup" className="rounded-lg p-1 text-slate-400 transition hover:bg-slate-100 hover:text-slate-700"><svg className="h-6 w-6" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M6 18 18 6M6 6l12 12" /></svg></button>
-        </div>
-        <div className="space-y-7">
-          <div><p className="mb-2 text-xs font-bold uppercase tracking-wide text-slate-400">Inovasi Terpilih</p><div className="rounded-xl border border-blue-100 bg-blue-50 px-4 py-4 font-medium text-blue-900">{data.judul}</div></div>
-          <div><p className="mb-2 text-xs font-bold uppercase tracking-wide text-slate-400">Akun Penilai <span className="text-rose-500">*</span></p><div className="flex min-h-14 flex-wrap items-center gap-2 rounded-2xl border border-slate-300 p-2.5 focus-within:border-violet-400 focus-within:ring-4 focus-within:ring-violet-50">
-            {selected.map((userId) => { const reviewer = assignmentUsers.find((user) => Number(user.id) === userId); if (!reviewer) return null; const locked = busy || assignmentSigners.has(userId) || (assignmentSigners.size > 0 && !assignmentReviewers.has(userId)); return <span key={userId} className="inline-flex items-center gap-2 rounded-lg border border-violet-100 bg-violet-50 py-2 pl-3 pr-2 text-sm font-medium text-violet-700">{reviewer.nama_lengkap}<button type="button" disabled={locked} aria-label={`Hapus ${reviewer.nama_lengkap}`} onClick={() => setSelected((current) => current.filter((id) => id !== userId))} className="rounded-full p-0.5 text-violet-400 hover:bg-violet-200 hover:text-violet-800 disabled:cursor-not-allowed disabled:opacity-40"><svg className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="m6 6 12 12M18 6 6 18" /></svg></button></span> })}
-            <select value="" disabled={busy || availableAssignmentUsers.length === 0} onChange={(event) => { const userId = Number(event.target.value); if (userId) setSelected((current) => current.includes(userId) ? current : [...current, userId]) }} className="min-w-[200px] flex-1 bg-transparent px-2 py-2 text-sm text-slate-500 outline-none disabled:cursor-not-allowed"><option value="">{availableAssignmentUsers.length ? '+ Tambah akun penilai...' : 'Semua penilai telah dipilih'}</option>{availableAssignmentUsers.map((user) => <option key={user.id} value={user.id}>{user.nama_lengkap}</option>)}</select>
-          </div><p className="mt-2 text-xs text-slate-500">Penilai yang sudah menandatangani harus tetap dipertahankan.</p></div>
-        </div>
-        <div className="mt-8 flex justify-end gap-3 border-t border-slate-200 pt-5"><button onClick={() => setAssignment(null)} className="rounded-xl border border-slate-200 px-5 py-3 font-medium text-slate-600 transition hover:bg-slate-50">Batal</button><button disabled={busy || !selected.length} onClick={saveAssignment} className="rounded-xl bg-violet-600 px-6 py-3 font-semibold text-white transition hover:bg-violet-700 disabled:cursor-not-allowed disabled:opacity-50">{busy ? 'Menyimpan...' : 'Simpan Penugasan'}</button></div>
-      </section>
-    </div>}
   </div>
 }

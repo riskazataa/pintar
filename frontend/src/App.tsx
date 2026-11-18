@@ -14,6 +14,7 @@ import Akun from './pages/admin/Akun'
 import Organisasi from './pages/admin/Organisasi'
 import PengaturanUsulan from './pages/admin/PengaturanUsulan'
 import PenugasanMassal from './pages/admin/PenugasanMassal'
+import PerbaikanMassal from './pages/admin/PerbaikanMassal'
 
 // Unit
 import SatkerLayout from './layouts/SatkerLayout'
@@ -25,11 +26,12 @@ import HasilSatker from './pages/satker/Hasil'
 import TimPenilaiLayout from './layouts/TimPenilaiLayout'
 import ManagementBA from './pages/tim-penilai/ManagementBA'
 import Tahap1Usulan from './pages/tim-penilai/Tahap1Usulan'
+import Tahap1DetailUsulan from './pages/tim-penilai/Tahap1DetailUsulan'
 import InnovationWorkflow from './pages/tim-penilai/InnovationWorkflow'
 
 function LegacyUsulanRedirect({ tahap }: { tahap?: number }) {
-  const { id } = useParams()
-  return <Navigate to={`/tim-penilai/usulan/${id}${tahap ? `/tahap-${tahap}` : ''}`} replace />
+  const { id, section } = useParams()
+  return <Navigate to={`/tim-penilai/penilaian/${id}${section ? `/${section}` : tahap ? `/tahap-${tahap}` : ''}`} replace />
 }
 
 function App() {
@@ -49,6 +51,7 @@ function App() {
         <Route path="organisasi" element={<Organisasi />} />
         <Route path="kunci-usulan" element={<PengaturanUsulan />} />
         <Route path="penugasan" element={<PenugasanMassal />} />
+        <Route path="perbaikan-massal" element={<PerbaikanMassal />} />
       <Route path="management-ba" element={<ManagementBA />} />
         <Route path="profil" element={<Profile />} />
       </Route>
@@ -74,9 +77,14 @@ function App() {
       <Route path="/tim-penilai" element={<TimPenilaiLayout />}>
         <Route index element={<Navigate to="/tim-penilai/dashboard" replace />} />
         <Route path="dashboard" element={<DashboardAnalytics />} />
-        <Route path="usulan" element={<Tahap1Usulan />} />
-        <Route path="usulan/:id" element={<InnovationWorkflow />} />
-        <Route path="usulan/:id/:section" element={<InnovationWorkflow />} />
+        <Route path="inovasi" element={<Tahap1Usulan mode="INOVASI" />} />
+        <Route path="inovasi/:id" element={<Tahap1DetailUsulan backPath="/tim-penilai/inovasi" />} />
+        <Route path="penilaian" element={<Tahap1Usulan mode="PENILAIAN" />} />
+        <Route path="penilaian/:id" element={<InnovationWorkflow />} />
+        <Route path="penilaian/:id/:section" element={<InnovationWorkflow />} />
+        <Route path="usulan" element={<Navigate to="/tim-penilai/penilaian" replace />} />
+        <Route path="usulan/:id" element={<LegacyUsulanRedirect />} />
+        <Route path="usulan/:id/:section" element={<LegacyUsulanRedirect />} />
 
         {/* Penilaian Tahap 1 (Nested Routes) */}
         <Route path="tahap-1/usulan" element={<Navigate to="/tim-penilai/usulan" replace />} />

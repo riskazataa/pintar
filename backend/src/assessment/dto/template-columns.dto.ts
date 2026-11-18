@@ -6,6 +6,7 @@ export class TemplateColumnDto {
   @IsString() @MaxLength(120) title: string;
   @IsIn(['readonly', 'text', 'textarea', 'number', 'score', 'select', 'radio', 'checkbox', 'date', 'url']) type: string;
   @IsBoolean() required: boolean;
+  @IsOptional() @IsIn(['BOTH', 'SATKER', 'REVIEWER']) owner?: 'BOTH' | 'SATKER' | 'REVIEWER';
   @IsOptional() @IsArray() @IsString({ each: true }) @MaxLength(120, { each: true }) options?: string[];
   @IsOptional() @IsString() @MaxLength(500) defaultValue?: string;
 }

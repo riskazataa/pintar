@@ -64,6 +64,7 @@ export const getUsulanList = (params?: {
   tahap?: number
   tahun?: number
   assignedToMe?: boolean
+  assignedToMeAny?: boolean
   sort_order?: 'asc' | 'desc'
 }) => {
   const { startDate, endDate, ...query } = params ?? {}
@@ -114,6 +115,9 @@ export const assignPenilai = (id: string | number, penilaiIds: (string | number)
 export const assignPenilaiBulk = (inovasiIds: number[], penilaiIds: number[], tahap = 1) =>
   api.patch('/inovasi/assign/bulk', { inovasi_ids: inovasiIds, penilai_ids: penilaiIds, tahap })
 
+export const assignPenilaiBySatkerBulk = (satkerIds: number[], penilaiIds: number[], tahun: number, tahap = 1) =>
+  api.patch('/inovasi/assign/bulk/satker', { satker_ids: satkerIds, penilai_ids: penilaiIds, tahap, tahun })
+
 export const savePenilaian = (id: string | number, answers: any[], tahap = 1) =>
   api.patch(`/inovasi/${id}/assessment-penilai`, { answers }, { params: { tahap } })
 
@@ -122,6 +126,9 @@ export const updateAssessmentAnswers = (id: string | number, data: { assessment_
 
 export const kembalikanUsulan = (id: string | number, catatan: string) =>
   api.patch(`/inovasi/${id}/perbaikan`, { catatan_perbaikan: catatan })
+
+export const kembalikanUsulanMassal = (inovasiIds: number[], catatan: string) =>
+  api.patch('/inovasi/perbaikan/bulk', { inovasi_ids: inovasiIds, catatan_perbaikan: catatan })
 
 export const lanjutkanUsulan = (id: string | number) =>
   api.patch(`/inovasi/${id}/lanjut`)
@@ -160,6 +167,7 @@ export interface BAColumn {
   title: string
   type: 'readonly' | 'text' | 'textarea' | 'number' | 'score' | 'select' | 'radio' | 'checkbox' | 'date' | 'url'
   required: boolean
+  owner?: 'BOTH' | 'SATKER' | 'REVIEWER'
   options?: string[]
   defaultValue?: string
 }

@@ -29,6 +29,8 @@ import { UpdateAssessmentAnswersDto } from './dto/update-assessment-answers.dto'
 import { SignInovasiDto } from './dto/sign-inovasi.dto';
 import { SaveInovasiDraftDto } from './dto/save-inovasi-draft.dto';
 import { BulkAssignPenilaiDto } from './dto/bulk-assign-penilai.dto';
+import { BulkAssignSatkerDto } from './dto/bulk-assign-satker.dto';
+import { BulkSendBackForPerbaikanDto } from './dto/bulk-send-back-for-perbaikan.dto';
 
 @Controller('inovasi')
 export class InovasiController {
@@ -119,6 +121,13 @@ export class InovasiController {
     return this.inovasiService.assignPenilaiBulk(dto.inovasi_ids, dto.penilai_ids, dto.tahap);
   }
 
+  @Patch('assign/bulk/satker')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('SUPER_ADMIN', 'REVIEWER')
+  async assignPenilaiBySatkerBulk(@Body() dto: BulkAssignSatkerDto) {
+    return this.inovasiService.assignPenilaiBySatkerBulk(dto.satker_ids, dto.penilai_ids, dto.tahun, dto.tahap);
+  }
+
   @Patch(':id/assign')
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles('SUPER_ADMIN', 'REVIEWER')
@@ -177,6 +186,20 @@ export class InovasiController {
     return this.inovasiService.sendBackForPerbaikan(
       id,
       catatan_perbaikan,
+      req.user,
+    );
+  }
+
+  @Patch('perbaikan/bulk')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('SUPER_ADMIN')
+  async sendBackForPerbaikanBulk(
+    @Body() dto: BulkSendBackForPerbaikanDto,
+    @Req() req: any,
+  ) {
+    return this.inovasiService.sendBackForPerbaikanBulk(
+      dto.inovasi_ids,
+      dto.catatan_perbaikan,
       req.user,
     );
   }

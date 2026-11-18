@@ -20,6 +20,20 @@ import { composeStage2Answers } from './stage2-assessment';
 import { orderFinalSignatureGroups } from './final-signature-order';
 import { baCriteriaStats } from './ba-criteria-stats';
 
+const KRITERIA_INOVASI_OPTIONS = [
+  'Pembaharuan / Orisinil / Modifikasi',
+  'Memudahkan pelayanan',
+  'Mempercepat pelayanan',
+  'Disebarluaskan',
+  'Bermanfaat',
+  'Spesifik',
+  'Berkelanjutan',
+  'Solusi/upaya pemecahan masalah',
+  'Dapat diaplikasikan di Internal dan atau eksternal',
+  'Percontohan nasional',
+];
+const REQUIRED_KRITERIA_COUNT = 9;
+
 @Injectable()
 export class InovasiService {
   constructor(private readonly prisma: PrismaService) {}
@@ -60,7 +74,7 @@ export class InovasiService {
     const page = query.page ?? 1;
     const limit = query.limit ?? 10;
     const sortOrder = query.sort_order ?? 'desc';
-    const { search, satker_id, status, start_date, end_date, assignedToMe, tahun } =
+    const { search, satker_id, status, start_date, end_date, assignedToMe, assignedToMeAny, tahun } =
       query;
 
     const where: Prisma.InovasiWhereInput = {};
@@ -95,7 +109,22 @@ export class InovasiService {
     }
 
     if (query.tahap === 2) where.status = StatusInovasi.SELESAI_EVALUASI;
-    if (assignedToMe && user.sub) {
+    if (assignedToMeAny && user.sub) {
+      const existingConditions = Array.isArray(where.AND)
+        ? where.AND
+        : where.AND
+          ? [where.AND]
+          : [];
+      where.AND = [
+        ...existingConditions,
+        {
+          OR: [
+            { penilai: { some: { id: user.sub } } },
+            { penilai_tahap2: { some: { id: user.sub } } },
+          ],
+        },
+      ];
+    } else if (assignedToMe && user.sub) {
       if (query.tahap === 2) where.penilai_tahap2 = { some: { id: user.sub } };
       else where.penilai = { some: { id: user.sub } };
     }
@@ -197,9 +226,10 @@ export class InovasiService {
     };
   }
 
-  private getStage1Answers(answers: any[], includeReviewer: boolean) {
+  private async getStage1Answers(answers: any[], includeReviewer: boolean) {
     const satkerAnswers = answers.filter((answer) => answer.tahap === 1 && (answer.source ?? 'SATKER') === 'SATKER');
-    if (!includeReviewer) return satkerAnswers;
+    const { columns } = await loadTemplateConfig(this.prisma, 1);
+    if (!includeReviewer) return this.filterAnswersByOwner(satkerAnswers, columns, 'SATKER');
 
     const reviewerAnswers = answers.filter((answer) => answer.tahap === 1 && answer.source === 'PENILAI');
     const reviewerByQuestion = new Map<number, any>();
@@ -208,12 +238,81 @@ export class InovasiService {
     return [
       ...satkerAnswers.map((answer) => {
         const reviewerAnswer = reviewerByQuestion.get(answer.question_id);
-        return reviewerAnswer
-          ? { ...answer, ...reviewerAnswer, question: reviewerAnswer.question ?? answer.question }
-          : answer;
+        if (!reviewerAnswer) return this.filterAnswersByOwner([answer], columns, 'SATKER')[0];
+        const satkerValues = answer.custom_values && typeof answer.custom_values === 'object' ? answer.custom_values : {};
+        const reviewerValues = reviewerAnswer.custom_values && typeof reviewerAnswer.custom_values === 'object' ? reviewerAnswer.custom_values : {};
+        const customValues: Record<string, unknown> = {
+          ...satkerValues,
+          ...reviewerValues,
+        };
+        const legacyValue = (key: 'jawaban_boolean' | 'catatan_string' | 'link') => {
+          const columnOwner = columns.find((item) => item.key === key)?.owner ?? 'BOTH';
+          const satkerHasCustomValue = Object.prototype.hasOwnProperty.call(satkerValues, key);
+          const reviewerHasCustomValue = Object.prototype.hasOwnProperty.call(reviewerValues, key);
+          if (columnOwner === 'SATKER') return satkerHasCustomValue ? satkerValues[key] : answer[key];
+          if (columnOwner === 'REVIEWER') return reviewerHasCustomValue ? reviewerValues[key] : reviewerAnswer[key];
+          if (reviewerHasCustomValue) return reviewerValues[key];
+          if (reviewerAnswer[key] !== undefined && reviewerAnswer[key] !== null) return reviewerAnswer[key];
+          return satkerHasCustomValue ? satkerValues[key] : answer[key];
+        };
+        for (const column of columns) {
+          const owner = column.owner ?? 'BOTH';
+          if (column.key === 'jawaban_boolean' || column.key === 'catatan_string' || column.key === 'link') {
+            const value = legacyValue(column.key);
+            if (value !== undefined) customValues[column.key] = value;
+            else delete customValues[column.key];
+            continue;
+          }
+          const hasReviewerValue = Object.prototype.hasOwnProperty.call(reviewerValues, column.key);
+          const sourceValues = owner === 'SATKER' ? satkerValues : owner === 'REVIEWER' || hasReviewerValue ? reviewerValues : satkerValues;
+          if (Object.prototype.hasOwnProperty.call(sourceValues, column.key)) customValues[column.key] = sourceValues[column.key];
+          else delete customValues[column.key];
+        }
+        const merged: any = { ...answer, ...reviewerAnswer, question: reviewerAnswer.question ?? answer.question, custom_values: customValues };
+        merged.jawaban_boolean = legacyValue('jawaban_boolean');
+        merged.catatan_string = legacyValue('catatan_string');
+        merged.link = legacyValue('link');
+        return merged;
       }),
-      ...reviewerAnswers.filter((answer) => !satkerQuestionIds.has(answer.question_id)),
+      ...this.filterAnswersByOwner(
+        reviewerAnswers.filter((answer) => !satkerQuestionIds.has(answer.question_id)),
+        columns,
+        'PENILAI',
+      ),
     ];
+  }
+
+  private filterAnswersByOwner<T extends { custom_values?: any; jawaban_boolean?: boolean; catatan_string?: string | null; link?: string | null }>(
+    answers: T[],
+    columns: { key: string; owner?: 'BOTH' | 'SATKER' | 'REVIEWER' }[],
+    source: 'SATKER' | 'PENILAI',
+  ): T[] {
+    return answers.map((answer) => {
+      const values = answer.custom_values && typeof answer.custom_values === 'object' && !Array.isArray(answer.custom_values)
+        ? answer.custom_values as Record<string, unknown>
+        : {};
+      const custom_values: Record<string, unknown> = {};
+      for (const column of columns) {
+        const owner = column.owner ?? 'BOTH';
+        if ((owner === 'BOTH' || (source === 'SATKER' ? owner === 'SATKER' : owner === 'REVIEWER'))
+          && Object.prototype.hasOwnProperty.call(values, column.key)) {
+          custom_values[column.key] = values[column.key];
+        }
+      }
+      const internalKeys = source === 'SATKER' ? ['__rincian'] : ['__kesimpulan', '__kesimpulan_catatan'];
+      for (const key of internalKeys) if (Object.prototype.hasOwnProperty.call(values, key)) custom_values[key] = values[key];
+      const mayEditLegacy = (key: 'jawaban_boolean' | 'catatan_string' | 'link') => {
+        const owner = columns.find((column) => column.key === key)?.owner ?? 'BOTH';
+        return owner === 'BOTH' || (source === 'SATKER' ? owner === 'SATKER' : owner === 'REVIEWER');
+      };
+      return {
+        ...answer,
+        jawaban_boolean: mayEditLegacy('jawaban_boolean') ? answer.jawaban_boolean : false,
+        catatan_string: mayEditLegacy('catatan_string') ? answer.catatan_string : null,
+        link: mayEditLegacy('link') ? answer.link : null,
+        custom_values,
+      };
+    });
   }
 
   private orderAssessmentAnswers(answers: any[]) {
@@ -235,7 +334,21 @@ export class InovasiService {
     this.validateTahap(tahap);
     const inovasi = await this.prisma.inovasi.findUnique({
       where: { id },
-      include: this.includeConfig,
+      include: {
+        ...this.includeConfig,
+        revision_logs: {
+          select: {
+            id: true,
+            catatan_perbaikan: true,
+            requested_at: true,
+            resubmitted_at: true,
+            changes: true,
+            requested_by: { select: { id: true, nama_lengkap: true } },
+            resubmitted_by: { select: { id: true, nama_lengkap: true } },
+          },
+          orderBy: { requested_at: 'desc' },
+        },
+      },
     });
 
     if (!inovasi) {
@@ -251,7 +364,7 @@ export class InovasiService {
         : await this.prisma.assessmentQuestion.findMany({ where: { tahap: 2, is_active: true }, orderBy: [{ urutan: 'asc' }, { id: 'asc' }] });
       const hiddenStage1Questions = await this.prisma.assessmentQuestion.findMany({ where: { tahap: 1, tahap2_hidden: true }, select: { id: true } });
       const hiddenStage1Ids = new Set(hiddenStage1Questions.map((question) => question.id));
-      const stage1Answers = this.orderAssessmentAnswers(this.getStage1Answers(inovasi.assessment_answers, true).filter((answer) => !hiddenStage1Ids.has(answer.question_id)));
+      const stage1Answers = this.orderAssessmentAnswers((await this.getStage1Answers(inovasi.assessment_answers, true)).filter((answer) => !hiddenStage1Ids.has(answer.question_id)));
       const answers = composeStage2Answers(stage1Answers, saved, questions);
       return {
         ...inovasi, status: inovasi.status_tahap2, penilai: inovasi.penilai_tahap2,
@@ -264,7 +377,7 @@ export class InovasiService {
       };
     }
     const allSignatures = inovasi.usulan_signatures;
-    const savedAnswers = this.getStage1Answers(
+    const savedAnswers = await this.getStage1Answers(
       inovasi.assessment_answers,
       view === 'evaluation' || (view !== 'self-assessment' && user?.role !== 'UNIT'),
     );
@@ -338,6 +451,16 @@ export class InovasiService {
       || !questions.some((question) => !question.is_header)
       || questions.some((question) => !submittedIds.has(question.id))) {
       throw new BadRequestException('Template Self Assessment belum lengkap atau sudah berubah. Muat ulang formulir sebelum mengirim usulan.');
+    }
+  }
+
+  private validateKriteriaInovasi(values: string[]) {
+    const allowed = new Set(KRITERIA_INOVASI_OPTIONS.map((value) => value.toLocaleLowerCase('id-ID')));
+    const selected = values.map((value) => String(value).trim().toLocaleLowerCase('id-ID'));
+    if (selected.length < REQUIRED_KRITERIA_COUNT
+      || new Set(selected).size !== selected.length
+      || selected.some((value) => !allowed.has(value))) {
+      throw new BadRequestException('Pilih minimal 9 dari 10 kriteria inovasi yang tersedia.');
     }
   }
 
@@ -475,6 +598,57 @@ export class InovasiService {
     });
   }
 
+  async assignPenilaiBySatkerBulk(satkerIds: number[], penilaiIds: number[], tahun: number, tahap = 1) {
+    this.validateTahap(tahap);
+    if (!Array.isArray(satkerIds) || !satkerIds.length || satkerIds.length > 200 || satkerIds.some((id) => !Number.isInteger(id) || id <= 0) || new Set(satkerIds).size !== satkerIds.length) {
+      throw new BadRequestException('Pilih Satker yang valid');
+    }
+    if (!Number.isInteger(tahun) || tahun < 2000 || tahun > 2100) {
+      throw new BadRequestException('Tahun pengajuan tidak valid');
+    }
+    if (!Array.isArray(penilaiIds) || !penilaiIds.length || penilaiIds.some((id) => !Number.isInteger(id) || id <= 0) || new Set(penilaiIds).size !== penilaiIds.length) {
+      throw new BadRequestException('Pilih penilai yang valid');
+    }
+
+    const periodStart = new Date(Date.UTC(tahun, 0, 1));
+    const periodEnd = new Date(Date.UTC(tahun + 1, 0, 1));
+    return this.prisma.$transaction(async (tx) => {
+      const [inovasiList, users] = await Promise.all([
+        tx.inovasi.findMany({
+          where: {
+            satker_id: { in: satkerIds },
+            submitted_at: { gte: periodStart, lt: periodEnd },
+            status: tahap === 2 ? StatusInovasi.SELESAI_EVALUASI : { not: StatusInovasi.DRAFT },
+          },
+          select: {
+            id: true,
+            usulan_signatures: { where: { tahap }, select: { user_id: true } },
+          },
+        }),
+        tx.user.findMany({
+          where: { id: { in: penilaiIds }, role: 'REVIEWER', status_registrasi: 'APPROVED' },
+          select: { id: true },
+        }),
+      ]);
+
+      if (users.length !== penilaiIds.length) {
+        throw new NotFoundException('Beberapa user penilai tidak ditemukan atau belum aktif');
+      }
+
+      const assignable = inovasiList.filter((inovasi) => inovasi.usulan_signatures.length === 0);
+      const skippedSigned = inovasiList.length - assignable.length;
+      const relation = tahap === 2 ? 'penilai_tahap2' : 'penilai';
+      for (const inovasi of assignable) {
+        await tx.inovasi.update({
+          where: { id: inovasi.id },
+          data: { [relation]: { set: penilaiIds.map((id) => ({ id })) } },
+        });
+      }
+
+      return { updated: assignable.length, skipped_signed: skippedSigned, tahap, tahun, satker_count: satkerIds.length };
+    });
+  }
+
   async getPenilaiList(inovasiId: number) {
     const penilai = await this.prisma.inovasi.findUnique({
       where: { id: inovasiId },
@@ -526,6 +700,214 @@ export class InovasiService {
       }));
   }
 
+  private normalizeSupportLink(value: unknown) {
+    if (typeof value !== 'string' || !value.trim()) return null;
+    try {
+      const raw = value.trim();
+      const url = new URL(/^[a-z][a-z\d+.-]*:\/\//i.test(raw) ? raw : `https://${raw}`);
+      if (!['http:', 'https:'].includes(url.protocol)) return null;
+      const trackingParams = new Set(['usp', 'fbclid', 'gclid', 'mc_cid', 'mc_eid']);
+      const retainedParams = [...url.searchParams.entries()]
+        .filter(([key]) => !trackingParams.has(key.toLowerCase()) && !key.toLowerCase().startsWith('utm_'))
+        .sort(([leftKey, leftValue], [rightKey, rightValue]) => leftKey.localeCompare(rightKey) || leftValue.localeCompare(rightValue));
+      const query = new URLSearchParams(retainedParams).toString();
+      const pathname = url.pathname.replace(/\/+$/, '') || '/';
+      return `${url.hostname.toLowerCase()}${pathname}${query ? `?${query}` : ''}`;
+    } catch {
+      return null;
+    }
+  }
+
+  private containsWebLink(value: string) {
+    return /(?:https?:\/\/|ftp:\/\/|www\.)[^\s]+|(?:^|[^a-z0-9@])(?:[a-z0-9-]+\.)+[a-z]{2,63}(?::\d+)?(?:[/?#][^\s]*)?/i.test(value)
+      || /(?:^|[^a-z0-9@])(?:\d{1,3}\.){3}\d{1,3}(?::\d+)?(?:[/?#][^\s]*)?/.test(value);
+  }
+
+  private async validateUniqueSupportLinks(
+    db: Pick<PrismaService, 'assessmentTemplatePackage' | 'assessmentAnswer' | 'assessmentQuestion'>,
+    submittedAnswers: any[],
+    inovasiId?: number,
+    mergeExisting = false,
+  ) {
+    const { columns } = await loadTemplateConfig(db, 1);
+    const editableBySatker = (column: { owner?: 'BOTH' | 'SATKER' | 'REVIEWER' }) => (column.owner ?? 'BOTH') !== 'REVIEWER';
+    const urlColumns = columns.filter((column) => column.type === 'url' && editableBySatker(column));
+    const textColumns = columns.filter((column) => (column.type === 'text' || column.type === 'textarea') && editableBySatker(column));
+    if (!urlColumns.length && !textColumns.length) return;
+
+    let answers = submittedAnswers;
+    if (mergeExisting && inovasiId && submittedAnswers.length) {
+      const questionIds = submittedAnswers.map((answer) => answer.question_id);
+      const existingAnswers = await db.assessmentAnswer.findMany({
+        where: { inovasi_id: inovasiId, tahap: 1, source: 'SATKER', question_id: { notIn: questionIds } },
+        select: { id: true, question_id: true, jawaban_boolean: true, catatan_string: true, link: true, custom_values: true },
+      });
+      answers = [...existingAnswers, ...submittedAnswers];
+    }
+
+    const questionConfigs = await db.assessmentQuestion.findMany({
+      where: { id: { in: answers.map((answer) => answer.question_id) } },
+      select: { id: true, is_header: true, satker_lock_mode: true },
+    });
+
+    const seen = new Map<string, { question_id: number }>();
+    for (const answer of answers) {
+      const question = questionConfigs.find((item) => item.id === answer.question_id);
+      if (question?.is_header || question?.satker_lock_mode === 'ROW') continue;
+      for (const column of columns.filter((item) => (item.type === 'url' || item.type === 'text' || item.type === 'textarea') && editableBySatker(item))) {
+        const customValues = answer.custom_values && typeof answer.custom_values === 'object' && !Array.isArray(answer.custom_values)
+          ? answer.custom_values
+          : {};
+        const legacyValue = column.key === 'link' ? answer.link : column.key === 'catatan_string' ? answer.catatan_string : undefined;
+        const value = customValues[column.key] ?? legacyValue;
+        if (value === undefined || value === null || value === '') continue;
+        if (column.type === 'text' || column.type === 'textarea') {
+          if (typeof value !== 'string') throw new BadRequestException(`Kolom ${column.title} hanya menerima keterangan teks`);
+          if (this.containsWebLink(value)) throw new BadRequestException(`Kolom ${column.title} hanya menerima teks, bukan tautan. Gunakan kolom dengan format Link.`);
+          continue;
+        }
+        if (typeof value !== 'string') throw new BadRequestException(`Kolom ${column.title} harus berisi tautan yang valid`);
+        if (!value.trim()) continue;
+        const normalized = this.normalizeSupportLink(value);
+        if (!normalized) throw new BadRequestException(`Kolom ${column.title} harus berisi tautan http/https yang valid`);
+        const prior = seen.get(normalized);
+        if (prior) {
+          throw new BadRequestException(`Link data dukung pada kolom ${column.title} pertanyaan ${answer.question_id} sudah digunakan pada pertanyaan ${prior.question_id}`);
+        }
+        seen.set(normalized, { question_id: answer.question_id });
+      }
+    }
+  }
+
+  private async captureRevisionSnapshot(
+    db: Prisma.TransactionClient,
+    inovasiId: number,
+  ): Promise<Prisma.InputJsonObject> {
+    const [inovasi, template] = await Promise.all([
+      db.inovasi.findUnique({
+        where: { id: inovasiId },
+        include: {
+          assessment_answers: {
+            where: { tahap: 1, source: 'SATKER' },
+            include: { question: { select: { id: true, pertanyaan: true, is_header: true, question_title_override: true } } },
+            orderBy: { question: { urutan: 'asc' } },
+          },
+        },
+      }),
+      loadTemplateConfig(db, 1),
+    ]);
+    if (!inovasi) throw new NotFoundException('Inovasi tidak ditemukan');
+
+    const fields: Record<string, unknown> = {
+      judul: inovasi.judul,
+      deskripsi_inovasi: inovasi.deskripsi_inovasi ?? '',
+      tahun: inovasi.tahun,
+      jenis_inovasi: inovasi.jenis_inovasi_pilihan.length ? inovasi.jenis_inovasi_pilihan : inovasi.jenis_inovasi,
+      kriteria_inovasi: inovasi.kriteria_inovasi,
+      link_data_dukung: inovasi.link_data_dukung,
+      penanggung_jawab: inovasi.pic_penanggung_jawab ?? [{ nama: inovasi.pic_nama, no_whatsapp: inovasi.pic_telp }],
+    };
+    const assessmentAnswers = inovasi.assessment_answers
+      .filter((answer) => !answer.question.is_header)
+      .map((answer) => {
+        const customValues = answer.custom_values && typeof answer.custom_values === 'object' && !Array.isArray(answer.custom_values)
+          ? answer.custom_values as Record<string, unknown>
+          : {};
+        const values: Record<string, unknown> = {};
+        if (Object.prototype.hasOwnProperty.call(customValues, '__rincian')) {
+          values.__rincian = customValues.__rincian;
+        }
+        for (const column of template.columns) {
+          values[column.key] = customValues[column.key] ?? (column.key === 'jawaban_boolean'
+            ? answer.jawaban_boolean
+            : column.key === 'catatan_string'
+              ? answer.catatan_string ?? ''
+              : column.key === 'link'
+                ? answer.link ?? ''
+                : '');
+        }
+        const labels: Record<string, string> = { __rincian: 'Rincian' };
+        for (const column of template.columns) labels[column.key] = column.title;
+        return {
+          question_id: answer.question_id,
+          question: answer.question.question_title_override || answer.question.pertanyaan,
+          values,
+          labels,
+        };
+      });
+
+    return JSON.parse(JSON.stringify({ fields, assessment_answers: assessmentAnswers })) as Prisma.InputJsonObject;
+  }
+
+  private diffRevisionSnapshots(beforeValue: Prisma.JsonValue | Prisma.InputJsonValue, afterValue: Prisma.InputJsonObject) {
+    const before = beforeValue as any;
+    const after = afterValue as any;
+    const changes: { section: string; item: string; field: string; before: unknown; after: unknown }[] = [];
+    const display = (value: unknown) => {
+      if (value === null || value === undefined || value === '') return '—';
+      if (Array.isArray(value)) return value.map((item) => item && typeof item === 'object'
+        ? [item.nama, item.no_whatsapp].filter(Boolean).join(' · ') || JSON.stringify(item)
+        : String(item)).join(', ');
+      return typeof value === 'object' ? JSON.stringify(value) : String(value);
+    };
+    const normalizeForComparison = (value: unknown) => value === undefined || value === null || value === '' || value === false ? null : value;
+    const equal = (left: unknown, right: unknown) => JSON.stringify(normalizeForComparison(left)) === JSON.stringify(normalizeForComparison(right));
+
+    for (const [key, label] of Object.entries({
+      judul: 'Judul inovasi', deskripsi_inovasi: 'Deskripsi inovasi', tahun: 'Tahun inovasi',
+      jenis_inovasi: 'Jenis inovasi', kriteria_inovasi: 'Kriteria inovasi',
+      link_data_dukung: 'Link data dukung', penanggung_jawab: 'Penanggung jawab',
+    })) {
+      const oldValue = before?.fields?.[key];
+      const newValue = after?.fields?.[key];
+      if (!equal(oldValue, newValue)) changes.push({ section: 'Data inovasi', item: '', field: label, before: display(oldValue), after: display(newValue) });
+    }
+
+    const priorAnswers = new Map<number, any>((before?.assessment_answers ?? []).map((answer: any) => [Number(answer.question_id), answer]));
+    const currentAnswers = new Map<number, any>((after?.assessment_answers ?? []).map((answer: any) => [Number(answer.question_id), answer]));
+    const questionIds = new Set<number>([...priorAnswers.keys(), ...currentAnswers.keys()]);
+    for (const questionId of questionIds) {
+      const oldAnswer = priorAnswers.get(questionId);
+      const newAnswer = currentAnswers.get(questionId);
+      const item = newAnswer?.question ?? oldAnswer?.question ?? `Pertanyaan ${questionId}`;
+      const keys = new Set<string>([...Object.keys(oldAnswer?.values ?? {}), ...Object.keys(newAnswer?.values ?? {})]);
+      for (const key of keys) {
+        const oldValue = oldAnswer?.values?.[key];
+        const newValue = newAnswer?.values?.[key];
+        const field = newAnswer?.labels?.[key] ?? oldAnswer?.labels?.[key] ?? (key === '__rincian' ? 'Rincian' : key);
+        if (!equal(oldValue, newValue)) changes.push({ section: 'Self Assessment', item, field, before: display(oldValue), after: display(newValue) });
+      }
+    }
+    return changes;
+  }
+
+  private async ensureOpenRevisionLog(tx: Prisma.TransactionClient, inovasi: { id: number; catatan_perbaikan: string | null }, userId?: number) {
+    const openLog = await tx.inovasiRevisionLog.findFirst({
+      where: { inovasi_id: inovasi.id, resubmitted_at: null },
+      orderBy: { requested_at: 'desc' },
+    });
+    if (openLog) return openLog;
+    const snapshot = await this.captureRevisionSnapshot(tx, inovasi.id);
+    return tx.inovasiRevisionLog.create({
+      data: {
+        inovasi_id: inovasi.id,
+        requested_by_id: userId,
+        catatan_perbaikan: inovasi.catatan_perbaikan?.trim() || 'Usulan dikembalikan untuk diperbaiki.',
+        snapshot,
+      },
+    });
+  }
+
+  private async finalizeRevisionLog(tx: Prisma.TransactionClient, logId: number, inovasiId: number, userId: number) {
+    const log = await tx.inovasiRevisionLog.findUniqueOrThrow({ where: { id: logId } });
+    const snapshot = await this.captureRevisionSnapshot(tx, inovasiId);
+    const changes = this.diffRevisionSnapshots(log.snapshot ?? {}, snapshot);
+    return tx.inovasiRevisionLog.update({
+      where: { id: logId },
+      data: { changes: changes as Prisma.InputJsonArray, resubmitted_at: new Date(), resubmitted_by_id: userId },
+    });
+  }
+
   private normalizeDraftContacts(contacts?: Record<string, unknown>[]) {
     return (contacts ?? []).slice(0, 2).map((contact) => ({
       nama: typeof contact.nama === 'string' ? contact.nama : '',
@@ -542,9 +924,11 @@ export class InovasiService {
     }
     await this.assertSubmissionIsUnlocked();
 
-    const assessmentAnswers = this.normalizeDraftAnswers(dto);
+    const { columns } = await loadTemplateConfig(this.prisma, 1);
+    const assessmentAnswers = this.filterAnswersByOwner(this.normalizeDraftAnswers(dto), columns, 'SATKER');
     await this.validateQuestionStage(assessmentAnswers, 1);
     await this.enforceSatkerLocks(assessmentAnswers);
+    await this.validateUniqueSupportLinks(this.prisma, assessmentAnswers);
     const contacts = this.normalizeDraftContacts(dto.pic_penanggung_jawab);
     const picNama = dto.pic_nama ?? contacts[0]?.nama ?? '';
     const picTelp = dto.pic_telp ?? contacts[0]?.no_whatsapp ?? '';
@@ -601,7 +985,8 @@ export class InovasiService {
       throw new ForbiddenException('Anda tidak memiliki akses ke draft ini');
     }
 
-    const assessmentAnswers = this.normalizeDraftAnswers(dto);
+    const { columns } = await loadTemplateConfig(this.prisma, 1);
+    const assessmentAnswers = this.filterAnswersByOwner(this.normalizeDraftAnswers(dto), columns, 'SATKER');
     await this.validateQuestionStage(assessmentAnswers, 1);
     await this.enforceSatkerLocks(assessmentAnswers, id);
     const contacts = this.normalizeDraftContacts(dto.pic_penanggung_jawab);
@@ -623,6 +1008,13 @@ export class InovasiService {
     }
 
     return this.prisma.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT id FROM "Inovasi" WHERE id = ${id} FOR UPDATE`;
+      const latest = await tx.inovasi.findUnique({ where: { id }, select: { status: true } });
+      if (!latest || (latest.status !== StatusInovasi.DRAFT && latest.status !== StatusInovasi.PERBAIKAN)) {
+        throw new ForbiddenException('Usulan sudah tidak dapat diubah sebagai draft.');
+      }
+      if (assessmentAnswers.length) await this.validateUniqueSupportLinks(tx, assessmentAnswers, id, true);
+      if (existing.status === StatusInovasi.PERBAIKAN) await this.ensureOpenRevisionLog(tx, existing);
       await tx.inovasi.update({ where: { id }, data });
       if (assessmentAnswers.length > 0) {
         await tx.assessmentAnswer.deleteMany({
@@ -654,9 +1046,12 @@ export class InovasiService {
     user: { sub: number; role: string; satker_id?: number | null },
   ) {
     if (user.role === 'UNIT') await this.assertSubmissionIsUnlocked();
-    const assessment_answers = dto.assessment_answers;
+    this.validateKriteriaInovasi(dto.kriteria_inovasi);
+    const { columns } = await loadTemplateConfig(this.prisma, 1);
+    const assessment_answers = this.filterAnswersByOwner(dto.assessment_answers ?? [], columns, 'SATKER');
     await this.validateSelfAssessmentSubmission(assessment_answers ?? []);
     if (user.role === 'UNIT') await this.enforceSatkerLocks(assessment_answers ?? [], undefined);
+    if (assessment_answers?.length) await this.validateUniqueSupportLinks(this.prisma, assessment_answers);
     const inovasiData = {
       judul: dto.judul,
       deskripsi_inovasi: dto.deskripsi_inovasi,
@@ -716,6 +1111,8 @@ export class InovasiService {
       throw new NotFoundException('Inovasi tidak ditemukan');
     }
 
+    if (user.role !== 'UNIT') throw new ForbiddenException('Reviewer tidak dapat mengubah data usulan Satker');
+
     if (existing.status !== StatusInovasi.PERBAIKAN && existing.status !== StatusInovasi.DRAFT) {
       throw new ForbiddenException(
         'Inovasi hanya dapat diubah jika berstatus Draft atau Perlu Perbaikan',
@@ -730,11 +1127,15 @@ export class InovasiService {
       throw new ForbiddenException('Anda tidak memiliki akses ke inovasi ini');
     }
 
+    this.validateKriteriaInovasi(dto.kriteria_inovasi ?? existing.kriteria_inovasi);
+
     if (user.role === 'UNIT') await this.assertSubmissionIsUnlocked();
 
-    const assessment_answers = dto.assessment_answers;
+    const { columns } = await loadTemplateConfig(this.prisma, 1);
+    const assessment_answers = this.filterAnswersByOwner(dto.assessment_answers ?? [], columns, 'SATKER');
     await this.validateSelfAssessmentSubmission(assessment_answers ?? []);
     if (user.role === 'UNIT') await this.enforceSatkerLocks(assessment_answers ?? [], id);
+    if (assessment_answers?.length) await this.validateUniqueSupportLinks(this.prisma, assessment_answers);
     const inovasiData: Record<string, any> = {};
     if (dto.judul !== undefined) inovasiData.judul = dto.judul;
     if (dto.deskripsi_inovasi !== undefined) inovasiData.deskripsi_inovasi = dto.deskripsi_inovasi;
@@ -761,6 +1162,16 @@ export class InovasiService {
     }
 
     return this.prisma.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT id FROM "Inovasi" WHERE id = ${id} FOR UPDATE`;
+      const latest = await tx.inovasi.findUnique({ where: { id }, select: { status: true, user_id: true, satker_id: true } });
+      if (!latest || (latest.status !== StatusInovasi.DRAFT && latest.status !== StatusInovasi.PERBAIKAN)
+        || latest.user_id !== user.sub || latest.satker_id !== user.satker_id) {
+        throw new ForbiddenException('Usulan sudah tidak dapat diubah oleh akun ini.');
+      }
+      if (assessment_answers?.length) await this.validateUniqueSupportLinks(tx, assessment_answers);
+      const revisionLog = existing.status === StatusInovasi.PERBAIKAN
+        ? await this.ensureOpenRevisionLog(tx, existing)
+        : null;
       await tx.inovasi.update({
         where: { id },
         data: inovasiData,
@@ -783,6 +1194,8 @@ export class InovasiService {
           })),
         });
       }
+
+      if (revisionLog) await this.finalizeRevisionLog(tx, revisionLog.id, id, user.sub);
 
       return tx.inovasi.findUnique({
         where: { id },
@@ -843,13 +1256,19 @@ export class InovasiService {
       );
     }
 
+    const stageStatus = tahap === 2 ? inovasi.status_tahap2 : inovasi.status;
+    if (stageStatus === StatusInovasi.PERBAIKAN) {
+      throw new ForbiddenException('Usulan sedang menunggu perbaikan Satker. Reviewer belum dapat mengedit penilaian.');
+    }
+
     if (tahap === 2 && inovasi.status !== StatusInovasi.SELESAI_EVALUASI) throw new BadRequestException('Tahap 1 belum selesai');
     const signed = await this.prisma.usulinSignature.count({ where: { usulan_id: inovasiId, tahap } });
     if (signed) throw new ForbiddenException('Penilaian sudah ditandatangani');
     const { columns } = await loadTemplateConfig(this.prisma, tahap);
-    const headerIds = new Set((await this.prisma.assessmentQuestion.findMany({ where: { id: { in: dto.answers.map((a) => a.question_id) }, is_header: true }, select: { id: true } })).map((q) => q.id));
-    const conclusions = await this.prisma.assessmentQuestion.findMany({ where: { id: { in: dto.answers.map((a) => a.question_id) }, question_title_override: '__FINAL_CONCLUSION__' }, select: { id: true } });
-    for (const answer of dto.answers) {
+    const assessmentAnswers = this.filterAnswersByOwner(dto.answers, columns, 'PENILAI');
+    const headerIds = new Set((await this.prisma.assessmentQuestion.findMany({ where: { id: { in: assessmentAnswers.map((a) => a.question_id) }, is_header: true }, select: { id: true } })).map((q) => q.id));
+    const conclusions = await this.prisma.assessmentQuestion.findMany({ where: { id: { in: assessmentAnswers.map((a) => a.question_id) }, question_title_override: '__FINAL_CONCLUSION__' }, select: { id: true } });
+    for (const answer of assessmentAnswers) {
       if (headerIds.has(answer.question_id)) continue;
       if (conclusions.some((question) => question.id === answer.question_id)) {
         const selected = answer.custom_values?.__kesimpulan;
@@ -858,6 +1277,7 @@ export class InovasiService {
         continue;
       }
       for (const column of columns) {
+        if (column.owner === 'SATKER') continue;
         const value = column.type === 'readonly' ? column.defaultValue : answer.custom_values?.[column.key] ?? (column.key === 'jawaban_boolean' ? answer.jawaban_boolean : column.key === 'catatan_string' ? answer.catatan_string : column.key === 'link' ? answer.link : undefined);
         const empty = value === undefined || value === null || (typeof value === 'string' && !value.trim());
         if (column.required && empty) throw new BadRequestException(`Kolom ${column.title} wajib diisi`);
@@ -871,10 +1291,13 @@ export class InovasiService {
           try { const url = new URL(String(value)); if (!['https:', 'http:'].includes(url.protocol)) throw new Error(); }
           catch { throw new BadRequestException(`Kolom ${column.title} harus berupa tautan http/https`); }
         }
+        if ((column.type === 'text' || column.type === 'textarea') && this.containsWebLink(String(value))) {
+          throw new BadRequestException(`Kolom ${column.title} hanya menerima teks, bukan tautan. Gunakan kolom dengan format Link.`);
+        }
         if (column.type === 'date' && (!/^\d{4}-\d{2}-\d{2}$/.test(String(value)) || Number.isNaN(Date.parse(String(value))))) throw new BadRequestException(`Kolom ${column.title} harus berupa tanggal`);
       }
     }
-    const ids = dto.answers.map((a) => a.question_id);
+    const ids = assessmentAnswers.map((a) => a.question_id);
     if (tahap === 2) {
       const expected = await this.getStage2QuestionIds(inovasiId);
       if (!ids.length || new Set(ids).size !== ids.length || ids.length !== expected.length || ids.some((id) => !expected.includes(id))) {
@@ -885,13 +1308,18 @@ export class InovasiService {
       if (!ids.length || valid !== ids.length) throw new BadRequestException('Pertanyaan tidak sesuai tahap');
     }
     return this.prisma.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT id FROM "Inovasi" WHERE id = ${inovasiId} FOR UPDATE`;
+      const latest = await tx.inovasi.findUnique({ where: { id: inovasiId }, select: { status: true, status_tahap2: true } });
+      if (!latest || (tahap === 2 ? latest.status_tahap2 : latest.status) === StatusInovasi.PERBAIKAN) {
+        throw new ForbiddenException('Usulan sedang menunggu perbaikan Satker. Reviewer belum dapat mengedit penilaian.');
+      }
       await tx.assessmentAnswer.deleteMany({
         where: { inovasi_id: inovasiId, tahap, source: 'PENILAI' },
       });
 
-      if (dto.answers.length > 0) {
+      if (assessmentAnswers.length > 0) {
         await tx.assessmentAnswer.createMany({
-          data: dto.answers.map((a) => ({
+          data: assessmentAnswers.map((a) => ({
             inovasi_id: inovasiId,
             tahap,
             source: 'PENILAI',
@@ -917,11 +1345,14 @@ export class InovasiService {
     user: { sub: number; role: string; satker_id?: number | null },
   ) {
     if (user.role !== 'UNIT') return this.updateAssessmentByPenilai(id, { answers: dto.assessment_answers }, user, 1);
-    await this.validateSelfAssessmentSubmission(dto.assessment_answers);
-    await this.enforceSatkerLocks(dto.assessment_answers, id);
+    const { columns } = await loadTemplateConfig(this.prisma, 1);
+    const assessmentAnswers = this.filterAnswersByOwner(dto.assessment_answers, columns, 'SATKER');
+    await this.validateSelfAssessmentSubmission(assessmentAnswers);
+    await this.enforceSatkerLocks(assessmentAnswers, id);
+    await this.validateUniqueSupportLinks(this.prisma, assessmentAnswers);
     const existing = await this.prisma.inovasi.findUnique({
       where: { id },
-      select: { id: true, user_id: true, satker_id: true, status: true },
+      select: { id: true, user_id: true, satker_id: true, status: true, catatan_perbaikan: true },
     });
 
     if (!existing) {
@@ -939,14 +1370,23 @@ export class InovasiService {
     }
 
     return this.prisma.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT id FROM "Inovasi" WHERE id = ${id} FOR UPDATE`;
+      const latest = await tx.inovasi.findUnique({ where: { id }, select: { status: true, user_id: true, satker_id: true } });
+      if (!latest || latest.user_id !== user.sub || latest.satker_id !== user.satker_id
+        || !['PENDING', 'PERBAIKAN'].includes(latest.status)) {
+        throw new ForbiddenException('Jawaban assessment sudah tidak dapat diubah oleh akun ini.');
+      }
+      const revisionLog = existing.status === StatusInovasi.PERBAIKAN
+        ? await this.ensureOpenRevisionLog(tx, { id, catatan_perbaikan: existing.catatan_perbaikan })
+        : null;
       await tx.assessmentAnswer.deleteMany({ where: { inovasi_id: id, tahap: 1, source: 'SATKER' } });
       if (existing.status === 'PERBAIKAN') {
         await tx.assessmentAnswer.deleteMany({ where: { inovasi_id: id, tahap: 1, source: 'PENILAI' } });
       }
 
-      if (dto.assessment_answers.length > 0) {
+      if (assessmentAnswers.length > 0) {
         await tx.assessmentAnswer.createMany({
-          data: dto.assessment_answers.map((a) => ({
+          data: assessmentAnswers.map((a) => ({
             inovasi_id: id,
             question_id: a.question_id,
             source: 'SATKER',
@@ -1223,6 +1663,10 @@ export class InovasiService {
 
       const signer = await tx.user.findUniqueOrThrow({ where: { id: user.sub }, select: { nama_lengkap: true, role: true, satker_id: true } });
       const isUnitSigner = tahap === 2 && signer.role === 'UNIT' && signer.satker_id === inovasi.satker_id;
+      const stageStatus = tahap === 2 ? inovasi.status_tahap2 : inovasi.status;
+      if (!isUnitSigner && stageStatus === StatusInovasi.PERBAIKAN) {
+        throw new ForbiddenException('Usulan sedang menunggu perbaikan Satker. Reviewer belum dapat menandatangani penilaian.');
+      }
       const assigned = tahap === 2 ? inovasi.penilai_tahap2 : inovasi.penilai;
       if (!isUnitSigner && !assigned.some((p) => p.id === user.sub)) throw new ForbiddenException('Anda tidak berhak menandatangani inovasi ini');
       if (tahap === 2) {
@@ -1307,29 +1751,83 @@ export class InovasiService {
   }
 
   async sendBackForPerbaikan(id: number, catatan_perbaikan: string, user: any) {
-    const inovasi = await this.prisma.inovasi.findUnique({
-      where: { id },
-      include: { penilai: { select: { id: true } } },
+    const note = typeof catatan_perbaikan === 'string' ? catatan_perbaikan.trim() : '';
+    if (!note) throw new BadRequestException('Catatan perbaikan wajib diisi');
+    return this.prisma.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT id FROM "Inovasi" WHERE id = ${id} FOR UPDATE`;
+      const inovasi = await tx.inovasi.findUnique({ where: { id }, include: { penilai: { select: { id: true } } } });
+      if (!inovasi) throw new NotFoundException('Inovasi tidak ditemukan');
+      if (!inovasi.penilai.some((p) => p.id === user.sub)) throw new ForbiddenException('Anda tidak ditugaskan sebagai penilai inovasi ini');
+      if (inovasi.status !== StatusInovasi.PENDING) {
+        throw new ForbiddenException('Usulan hanya dapat dikembalikan saat menunggu penilaian reviewer.');
+      }
+      const snapshot = await this.captureRevisionSnapshot(tx, id);
+      await tx.inovasiRevisionLog.create({
+        data: { inovasi_id: id, requested_by_id: user.sub, catatan_perbaikan: note, snapshot },
+      });
+      return tx.inovasi.update({
+        where: { id },
+        data: { status: StatusInovasi.PERBAIKAN, catatan_perbaikan: note },
+        include: this.includeConfig,
+      });
     });
+  }
 
-    if (!inovasi) {
-      throw new NotFoundException('Inovasi tidak ditemukan');
+  async sendBackForPerbaikanBulk(
+    inovasiIds: number[],
+    catatan_perbaikan: string,
+    user: { sub: number; role: string },
+  ) {
+    if (user.role !== 'SUPER_ADMIN') {
+      throw new ForbiddenException('Hanya Super Admin yang dapat mengembalikan usulan secara massal.');
+    }
+    const note = typeof catatan_perbaikan === 'string' ? catatan_perbaikan.trim() : '';
+    if (!note) throw new BadRequestException('Catatan perbaikan wajib diisi.');
+    if (note.length > 2000) throw new BadRequestException('Catatan perbaikan maksimal 2.000 karakter.');
+    if (!Array.isArray(inovasiIds) || !inovasiIds.length || inovasiIds.length > 200
+      || inovasiIds.some((id) => !Number.isInteger(id) || id < 1)
+      || new Set(inovasiIds).size !== inovasiIds.length) {
+      throw new BadRequestException('Pilih 1 sampai 200 usulan yang valid.');
     }
 
-    const isPenilai = inovasi.penilai.some((p) => p.id === user.sub);
-    if (!isPenilai) {
-      throw new ForbiddenException(
-        'Anda tidak ditugaskan sebagai penilai inovasi ini',
-      );
-    }
+    return this.prisma.$transaction(async (tx) => {
+      // Lock in a stable order to avoid concurrent bulk actions changing the same proposals.
+      for (const id of [...inovasiIds].sort((left, right) => left - right)) {
+        const rows = await tx.$queryRaw<{ id: number }[]>`SELECT id FROM "Inovasi" WHERE id = ${id} FOR UPDATE`;
+        if (!rows.length) throw new NotFoundException(`Usulan #${id} tidak ditemukan.`);
+      }
 
-    return this.prisma.inovasi.update({
-      where: { id },
-      data: {
-        status: StatusInovasi.PERBAIKAN,
-        catatan_perbaikan,
-      },
-      include: this.includeConfig,
+      const proposals = await tx.inovasi.findMany({
+        where: { id: { in: inovasiIds } },
+        select: { id: true, status: true },
+      });
+      const notReturnable = proposals.filter((proposal) => proposal.status !== StatusInovasi.PENDING);
+      if (notReturnable.length) {
+        throw new BadRequestException(
+          `Hanya usulan berstatus sedang direview yang dapat dikembalikan. Periksa usulan: ${notReturnable.map(({ id }) => `#${id}`).join(', ')}.`,
+        );
+      }
+
+      const revisionLogs: Prisma.InovasiRevisionLogCreateManyInput[] = [];
+      for (const id of inovasiIds) {
+        revisionLogs.push({
+          inovasi_id: id,
+          requested_by_id: user.sub,
+          catatan_perbaikan: note,
+          snapshot: await this.captureRevisionSnapshot(tx, id),
+        });
+      }
+      await tx.inovasiRevisionLog.createMany({ data: revisionLogs });
+
+      const updated = await tx.inovasi.updateMany({
+        where: { id: { in: inovasiIds }, status: StatusInovasi.PENDING },
+        data: { status: StatusInovasi.PERBAIKAN, catatan_perbaikan: note },
+      });
+      if (updated.count !== inovasiIds.length) {
+        throw new BadRequestException('Sebagian usulan berubah saat diproses. Muat ulang daftar lalu coba lagi.');
+      }
+
+      return { updated: updated.count, inovasi_ids: inovasiIds, catatan_perbaikan: note };
     });
   }
 

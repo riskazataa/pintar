@@ -21,6 +21,8 @@ import { useNotifications } from '../../components/NotificationProvider'
 import YearSelect from '../../components/YearSelect'
 import { KRITERIA_PEMBARUAN, normalizeKriteriaInovasi } from '../../utils/kriteria-inovasi'
 import { getSubmissionLock } from '../../services/submission-settings.service'
+import { findDuplicateSupportLinkCells, findLinksInTextCells } from '../../utils/support-links'
+import RevisionHistory from '../../components/RevisionHistory'
 
 interface UsulanItem {
   id: string
@@ -64,6 +66,7 @@ interface FormErrors {
   deskripsiInovasi?: string
   tahun?: string
   jenisInovasi?: string
+  kriteriaInovasi?: string
   linkDataDukung?: string
   penanggungJawab?: (string | undefined)[]
   noWhatsapp?: (string | undefined)[]
@@ -90,6 +93,7 @@ const KRITERIA_INOVASI_OPTIONS = [
   'Berkelanjutan', 'Solusi/upaya pemecahan masalah',
   'Dapat diaplikasikan di Internal dan atau eksternal', 'Percontohan nasional',
 ]
+const REQUIRED_KRITERIA_COUNT = 9
 
 function getUser() {
   try {
@@ -361,6 +365,9 @@ export default function Usulan() {
       if (!deskripsiInovasi.trim()) errors.deskripsiInovasi = 'Deskripsi singkat inovasi wajib diisi.'
       if (!tahun.trim()) errors.tahun = 'Tahun inovasi wajib diisi.'
       if (!jenisInovasi.length) errors.jenisInovasi = 'Pilih minimal satu jenis inovasi.'
+      if (KRITERIA_INOVASI_OPTIONS.filter((item) => kriteria.includes(item)).length < REQUIRED_KRITERIA_COUNT) {
+        errors.kriteriaInovasi = 'Pilih minimal 9 dari 10 kriteria inovasi.'
+      }
       if (!linkDataDukung.trim()) errors.linkDataDukung = 'Link data dukung wajib diisi.'
       else if (!isValidSupportLink(linkDataDukung)) errors.linkDataDukung = 'Masukkan tautan lengkap yang diawali http:// atau https://.'
       const namaPicErrors = picContacts.map((contact) => contact.nama.trim() ? undefined : 'Nama penanggung jawab wajib diisi.')
@@ -384,6 +391,29 @@ export default function Usulan() {
     }
 
     if (questionsLoading || !hasAssessmentQuestions) return
+
+    const duplicateSupportLinks = findDuplicateSupportLinkCells(
+      Object.values(answers).map((answer) => {
+        const question = questions.find((item) => String(item.id) === answer.question_id)
+        return { ...answer, id: answer.question_id, question }
+      }),
+      assessmentColumns,
+    )
+    if (duplicateSupportLinks.size) {
+      notify('Link data dukung tidak boleh sama pada lebih dari satu pertanyaan. Periksa kolom yang ditandai.', 'warning')
+      return
+    }
+    const textCellsWithLinks = findLinksInTextCells(
+      Object.values(answers).map((answer) => {
+        const question = questions.find((item) => String(item.id) === answer.question_id)
+        return { ...answer, id: answer.question_id, question }
+      }),
+      assessmentColumns,
+    )
+    if (textCellsWithLinks.size) {
+      notify('Kolom keterangan hanya menerima teks. Pindahkan tautan ke kolom yang formatnya Link.', 'warning')
+      return
+    }
 
     const missingColumn = assessmentColumns.find((column) => column.required && column.type !== 'readonly' && Object.values(answers).some((answer) => {
       const question = questions.find((q) => String(q.id) === answer.question_id)
@@ -436,6 +466,19 @@ export default function Usulan() {
     if (!editingId && submissionBlocked) {
       notify(submissionLockMessage, 'warning')
       return
+    }
+    if (step === 2 && !questionsLoading && hasAssessmentQuestions) {
+      const textCellsWithLinks = findLinksInTextCells(
+        Object.values(answers).map((answer) => {
+          const question = questions.find((item) => String(item.id) === answer.question_id)
+          return { ...answer, id: answer.question_id, question }
+        }),
+        assessmentColumns,
+      )
+      if (textCellsWithLinks.size) {
+        notify('Kolom keterangan hanya menerima teks. Pindahkan tautan ke kolom yang formatnya Link.', 'warning')
+        return
+      }
     }
     setSavingDraft(true)
     const payload: Record<string, unknown> = {
@@ -490,7 +533,11 @@ export default function Usulan() {
     } finally { setDeleting(false) }
   }
 
-  const toggleKriteria = (val: string) => setKriteria((prev) => prev.includes(val) ? prev.filter((v) => v !== val) : [...prev, val])
+  const toggleKriteria = (val: string) => setKriteria((prev) => {
+    if (prev.includes(val)) return prev.filter((value) => value !== val)
+    if (KRITERIA_INOVASI_OPTIONS.filter((item) => prev.includes(item)).length >= KRITERIA_INOVASI_OPTIONS.length) return prev
+    return [...prev, val]
+  })
   const orderedQuestions = buildTreeStructure(questions).map(({ q }) => q)
   const assessmentRows = orderedQuestions.map((question) => {
     const questionId = String(question.id)
@@ -613,7 +660,7 @@ export default function Usulan() {
       </>}
 
       {isFormPage && (
-        <div className="mx-auto w-full max-w-5xl">
+        <div className="mx-auto w-full max-w-7xl">
           <div className="overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm">
             <div className="flex items-center justify-between border-b px-6 py-4">
               <div>
@@ -634,12 +681,7 @@ export default function Usulan() {
               ))}
             </div>
             <div className="px-6 py-5">
-              {editingId && catatanPerbaikan && (
-                <div className="mb-4 flex items-start gap-3 rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
-                  <svg className="mt-0.5 h-5 w-5 shrink-0" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M12 9v2m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
-                  <div><strong>Catatan Perbaikan dari Reviewer:</strong> {catatanPerbaikan}</div>
-                </div>
-              )}
+              {editingId && <div className="mb-4"><RevisionHistory logs={detailUsulan?.revision_logs ?? []} fallbackNote={catatanPerbaikan} /></div>}
               {step === 1 && (
                 <div className="space-y-4">
                   {/* ... Kode Step 1 tetap sama persis ... */}
@@ -676,15 +718,19 @@ export default function Usulan() {
                     </div>
                   </div>
                   <div>
-                    <label className="mb-2 block text-sm font-medium text-gray-700">Kriteria Inovasi</label>
+                    <label className={`mb-2 block text-sm font-medium ${formErrors.kriteriaInovasi ? 'text-red-600' : 'text-gray-700'}`}>
+                      Kriteria Inovasi <span className="text-red-500">*</span>
+                      <span className={`ml-2 font-normal ${formErrors.kriteriaInovasi ? 'text-red-600' : 'text-gray-500'}`}>(Pilih minimal 9 dari 10 · {KRITERIA_INOVASI_OPTIONS.filter((item) => kriteria.includes(item)).length}/10 dipilih)</span>
+                    </label>
                     <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
                       {KRITERIA_INOVASI_OPTIONS.map((k) => (
-                        <label key={k} className="flex items-start gap-2 rounded-lg border border-gray-200 p-3 transition hover:border-blue-300 hover:bg-blue-50/30 cursor-pointer">
-                          <input type="checkbox" checked={kriteria.includes(k)} onChange={() => toggleKriteria(k)} className="mt-0.5 h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500" />
+                        <label key={k} className={`flex items-start gap-2 rounded-lg border p-3 transition ${kriteria.includes(k) ? 'border-blue-300 bg-blue-50/40' : 'border-gray-200'} cursor-pointer hover:border-blue-300 hover:bg-blue-50/30`}>
+                          <input type="checkbox" checked={kriteria.includes(k)} onChange={() => { toggleKriteria(k); setFormErrors((errors) => ({ ...errors, kriteriaInovasi: undefined })) }} className="mt-0.5 h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500" />
                           <span className="text-sm text-gray-700">{k}</span>
                         </label>
                       ))}
                     </div>
+                    {formErrors.kriteriaInovasi && <p className="mt-1 text-xs text-red-600">{formErrors.kriteriaInovasi}</p>}
                   </div>
                   <div>
                     <label className={`mb-1 block text-sm font-medium ${formErrors.linkDataDukung ? 'text-red-600' : 'text-gray-700'}`}>Link Data Dukung (Surat Pengantar, Penjelasan Inovasi, Data Dukung) <span className="text-red-500">*</span></label>

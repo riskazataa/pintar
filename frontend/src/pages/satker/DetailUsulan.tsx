@@ -8,6 +8,7 @@ import { getStatusPresentation } from '../../utils/inovasi-status'
 import { useNotifications } from '../../components/NotificationProvider'
 import { formatJenisInovasi } from '../../utils/jenis-inovasi'
 import { normalizeKriteriaInovasi } from '../../utils/kriteria-inovasi'
+import RevisionHistory from '../../components/RevisionHistory'
 
 function formatDate(dateStr?: string) {
   if (!dateStr) return '-'
@@ -101,12 +102,7 @@ export default function DetailUsulan() {
         ))}
       </div>
 
-      {data.status === 'PERBAIKAN' && data.catatan_perbaikan && (
-        <div className="flex items-start gap-3 rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
-          <svg className="mt-0.5 h-5 w-5 shrink-0" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M12 9v2m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
-          <div><strong>Catatan Perbaikan dari Reviewer:</strong> {data.catatan_perbaikan}</div>
-        </div>
-      )}
+      <RevisionHistory logs={data.revision_logs ?? []} fallbackNote={data.status === 'PERBAIKAN' ? data.catatan_perbaikan : null} />
 
       <div className="grid grid-cols-1 gap-6 items-start">
         

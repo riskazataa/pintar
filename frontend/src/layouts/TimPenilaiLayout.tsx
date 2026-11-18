@@ -20,7 +20,8 @@ interface MenuItem {
 
 const menuItems: MenuItem[] = [
   { to: '/tim-penilai/dashboard', label: 'Dashboard', icon: 'dashboard' },
-  { to: '/tim-penilai/usulan', label: 'Penilaian Inovasi', icon: 'document' },
+  { to: '/tim-penilai/inovasi', label: 'Inovasi', icon: 'folder' },
+  { to: '/tim-penilai/penilaian', label: 'Penilaian', icon: 'clipboard' },
 ]
 
 function MenuIcon({ name }: { name: string }) {
