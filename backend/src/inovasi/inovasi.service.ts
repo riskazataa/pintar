@@ -32,7 +32,6 @@ const KRITERIA_INOVASI_OPTIONS = [
   'Dapat diaplikasikan di Internal dan atau eksternal',
   'Percontohan nasional',
 ];
-const REQUIRED_KRITERIA_COUNT = 9;
 
 @Injectable()
 export class InovasiService {
@@ -457,10 +456,9 @@ export class InovasiService {
   private validateKriteriaInovasi(values: string[]) {
     const allowed = new Set(KRITERIA_INOVASI_OPTIONS.map((value) => value.toLocaleLowerCase('id-ID')));
     const selected = values.map((value) => String(value).trim().toLocaleLowerCase('id-ID'));
-    if (selected.length < REQUIRED_KRITERIA_COUNT
-      || new Set(selected).size !== selected.length
+    if (new Set(selected).size !== selected.length
       || selected.some((value) => !allowed.has(value))) {
-      throw new BadRequestException('Pilih minimal 9 dari 10 kriteria inovasi yang tersedia.');
+      throw new BadRequestException('Kriteria inovasi tidak valid.');
     }
   }
 

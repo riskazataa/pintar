@@ -66,7 +66,6 @@ interface FormErrors {
   deskripsiInovasi?: string
   tahun?: string
   jenisInovasi?: string
-  kriteriaInovasi?: string
   linkDataDukung?: string
   penanggungJawab?: (string | undefined)[]
   noWhatsapp?: (string | undefined)[]
@@ -93,7 +92,6 @@ const KRITERIA_INOVASI_OPTIONS = [
   'Berkelanjutan', 'Solusi/upaya pemecahan masalah',
   'Dapat diaplikasikan di Internal dan atau eksternal', 'Percontohan nasional',
 ]
-const REQUIRED_KRITERIA_COUNT = 9
 
 function getUser() {
   try {
@@ -365,9 +363,6 @@ export default function Usulan() {
       if (!deskripsiInovasi.trim()) errors.deskripsiInovasi = 'Deskripsi singkat inovasi wajib diisi.'
       if (!tahun.trim()) errors.tahun = 'Tahun inovasi wajib diisi.'
       if (!jenisInovasi.length) errors.jenisInovasi = 'Pilih minimal satu jenis inovasi.'
-      if (KRITERIA_INOVASI_OPTIONS.filter((item) => kriteria.includes(item)).length < REQUIRED_KRITERIA_COUNT) {
-        errors.kriteriaInovasi = 'Pilih minimal 9 dari 10 kriteria inovasi.'
-      }
       if (!linkDataDukung.trim()) errors.linkDataDukung = 'Link data dukung wajib diisi.'
       else if (!isValidSupportLink(linkDataDukung)) errors.linkDataDukung = 'Masukkan tautan lengkap yang diawali http:// atau https://.'
       const namaPicErrors = picContacts.map((contact) => contact.nama.trim() ? undefined : 'Nama penanggung jawab wajib diisi.')
@@ -718,19 +713,18 @@ export default function Usulan() {
                     </div>
                   </div>
                   <div>
-                    <label className={`mb-2 block text-sm font-medium ${formErrors.kriteriaInovasi ? 'text-red-600' : 'text-gray-700'}`}>
-                      Kriteria Inovasi <span className="text-red-500">*</span>
-                      <span className={`ml-2 font-normal ${formErrors.kriteriaInovasi ? 'text-red-600' : 'text-gray-500'}`}>(Pilih minimal 9 dari 10 · {KRITERIA_INOVASI_OPTIONS.filter((item) => kriteria.includes(item)).length}/10 dipilih)</span>
+                    <label className="mb-2 block text-sm font-medium text-gray-700">
+                      Kriteria Inovasi
+                      <span className="ml-2 font-normal text-gray-500">(Opsional · {KRITERIA_INOVASI_OPTIONS.filter((item) => kriteria.includes(item)).length}/10 dipilih)</span>
                     </label>
                     <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
                       {KRITERIA_INOVASI_OPTIONS.map((k) => (
                         <label key={k} className={`flex items-start gap-2 rounded-lg border p-3 transition ${kriteria.includes(k) ? 'border-blue-300 bg-blue-50/40' : 'border-gray-200'} cursor-pointer hover:border-blue-300 hover:bg-blue-50/30`}>
-                          <input type="checkbox" checked={kriteria.includes(k)} onChange={() => { toggleKriteria(k); setFormErrors((errors) => ({ ...errors, kriteriaInovasi: undefined })) }} className="mt-0.5 h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500" />
+                          <input type="checkbox" checked={kriteria.includes(k)} onChange={() => toggleKriteria(k)} className="mt-0.5 h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500" />
                           <span className="text-sm text-gray-700">{k}</span>
                         </label>
                       ))}
                     </div>
-                    {formErrors.kriteriaInovasi && <p className="mt-1 text-xs text-red-600">{formErrors.kriteriaInovasi}</p>}
                   </div>
                   <div>
                     <label className={`mb-1 block text-sm font-medium ${formErrors.linkDataDukung ? 'text-red-600' : 'text-gray-700'}`}>Link Data Dukung (Surat Pengantar, Penjelasan Inovasi, Data Dukung) <span className="text-red-500">*</span></label>
