@@ -61,6 +61,11 @@ export class QueryInovasiDto {
   assignedToMe?: boolean;
 
   @IsOptional()
+  @Type(() => Boolean)
+  @IsBoolean()
+  assignedToMeAny?: boolean;
+
+  @IsOptional()
   @IsIn(['SEDANG_DIREVIEW', 'MENUNGGU_TTD', 'LOLOS', 'TIDAK_LOLOS', 'PERBAIKAN'])
   hasil?: string;
 

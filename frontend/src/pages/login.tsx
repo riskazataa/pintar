@@ -1,10 +1,12 @@
 import { type FormEvent, useState } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
+import { Link, useLocation, useNavigate } from 'react-router-dom'
 import axios from 'axios'
 import { login as loginUser } from '../services/auth.service'
 
 export default function Login({ onSwitch }: { onSwitch: () => void }) {
   const navigate = useNavigate()
+  const location = useLocation()
+  const sessionExpired = new URLSearchParams(location.search).get('reason') === 'session-expired'
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [error, setError] = useState('')
@@ -54,6 +56,12 @@ export default function Login({ onSwitch }: { onSwitch: () => void }) {
               Silakan masuk ke akun Anda
             </p>
           </div>
+
+          {sessionExpired && (
+            <div role="status" className="mb-4 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+              Sesi Anda telah berakhir. Silakan masuk kembali.
+            </div>
+          )}
 
           {error && (
             <div className="mb-4 rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700">

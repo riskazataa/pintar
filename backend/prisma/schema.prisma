@@ -57,6 +57,8 @@ model User {
   // 3. TAMBAHAN: Tanda tangan usulan ini
   usulan_signatures UsulinSignature[]
   password_reset PasswordReset?
+  revision_requests InovasiRevisionLog[] @relation("RevisionRequestedBy")
+  revision_resubmissions InovasiRevisionLog[] @relation("RevisionResubmittedBy")
 }
 
 model PasswordReset {
@@ -119,9 +121,27 @@ model Inovasi {
   submitted_at          DateTime?
   updated_at            DateTime           @updatedAt
   assessment_answers    AssessmentAnswer[]
+  revision_logs         InovasiRevisionLog[]
   template_package_id   Int?
   template_package      AssessmentTemplatePackage? @relation(fields: [template_package_id], references: [id], onDelete: Restrict)
   workflow              Json?
+}
+
+model InovasiRevisionLog {
+  id                Int       @id @default(autoincrement())
+  inovasi_id        Int
+  inovasi           Inovasi   @relation(fields: [inovasi_id], references: [id], onDelete: Cascade)
+  requested_by_id   Int?
+  requested_by      User?     @relation("RevisionRequestedBy", fields: [requested_by_id], references: [id], onDelete: SetNull)
+  resubmitted_by_id Int?
+  resubmitted_by    User?     @relation("RevisionResubmittedBy", fields: [resubmitted_by_id], references: [id], onDelete: SetNull)
+  catatan_perbaikan String
+  snapshot          Json?
+  changes           Json?
+  requested_at      DateTime  @default(now())
+  resubmitted_at    DateTime?
+
+  @@index([inovasi_id, requested_at])
 }
 
 model AssessmentQuestion {

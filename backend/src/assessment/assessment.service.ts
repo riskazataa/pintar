@@ -23,7 +23,10 @@ export class AssessmentService {
       if (column.type === 'readonly' && column.required && !column.defaultValue?.trim()) throw new BadRequestException(`Isi nilai tetap untuk kolom ${column.title}`);
     }
     const source = tahap === 2 ? await this.getColumns(1) : null;
-    const config = source ? { ...dto, columns: dto.columns.filter((column) => !source.columns.some((inherited) => inherited.key === column.key)) } : dto;
+    const normalizedColumns = dto.columns.map((column) => ({ ...column, owner: column.owner ?? 'BOTH' as const }));
+    const config = source
+      ? { ...dto, columns: normalizedColumns.filter((column) => !source.columns.some((inherited) => inherited.key === column.key)) }
+      : { ...dto, columns: normalizedColumns };
     await this.prisma.assessmentTemplatePackage.create({ data: { nama: `BA_COLUMNS_STAGE_${tahap}`, config: JSON.parse(JSON.stringify(config)) } });
     return dto;
   }

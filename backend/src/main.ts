@@ -32,6 +32,7 @@ async function bootstrap() {
     },
   });
 
-  await app.listen(process.env.PORT ?? 3000);
+  const host = process.env.HOST || (isDevelopment ? '127.0.0.1' : '0.0.0.0');
+  await app.listen(process.env.PORT ?? 3000, host);
 }
 bootstrap();
