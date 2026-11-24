@@ -119,7 +119,12 @@ export class InovasiService {
         {
           OR: [
             { penilai: { some: { id: user.sub } } },
-            { penilai_tahap2: { some: { id: user.sub } } },
+            {
+              AND: [
+                { status: StatusInovasi.SELESAI_EVALUASI },
+                { penilai_tahap2: { some: { id: user.sub } } },
+              ],
+            },
           ],
         },
       ];
@@ -483,50 +488,48 @@ export class InovasiService {
 
   async assignPenilai(inovasiId: number, penilaiIds: number[], tahap = 1) {
     this.validateTahap(tahap);
-    if (!Array.isArray(penilaiIds) || !penilaiIds.length || penilaiIds.some((id) => !Number.isInteger(id)) || new Set(penilaiIds).size !== penilaiIds.length) throw new BadRequestException('Pilih penilai yang valid');
-    const inovasi = await this.prisma.inovasi.findUnique({
-      where: { id: inovasiId },
-      include: {
-        penilai: { select: { id: true } },
-        penilai_tahap2: { select: { id: true } },
-      },
-    });
-    if (!inovasi) {
-      throw new NotFoundException('Inovasi tidak ditemukan');
-    }
+    if (!Array.isArray(penilaiIds) || penilaiIds.some((id) => !Number.isInteger(id)) || new Set(penilaiIds).size !== penilaiIds.length) throw new BadRequestException('Pilih penilai yang valid');
+    return this.prisma.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT id FROM "Inovasi" WHERE id = ${inovasiId} FOR UPDATE`;
+      const inovasi = await tx.inovasi.findUnique({
+        where: { id: inovasiId },
+        include: {
+          penilai: { select: { id: true } },
+          penilai_tahap2: { select: { id: true } },
+        },
+      });
+      if (!inovasi) throw new NotFoundException('Inovasi tidak ditemukan');
 
-    const users = await this.prisma.user.findMany({
-      where: { id: { in: penilaiIds }, role: 'REVIEWER', status_registrasi: 'APPROVED' },
-      select: { id: true },
-    });
+      const users = await tx.user.findMany({
+        where: { id: { in: penilaiIds }, role: 'REVIEWER', status_registrasi: 'APPROVED' },
+        select: { id: true },
+      });
+      if (users.length !== penilaiIds.length) throw new NotFoundException('Beberapa user penilai tidak ditemukan');
 
-    if (users.length !== penilaiIds.length) {
-      throw new NotFoundException('Beberapa user penilai tidak ditemukan');
-    }
-
-    if (tahap === 2 && inovasi.status !== StatusInovasi.SELESAI_EVALUASI) throw new BadRequestException('Tahap 1 belum selesai');
-    const currentReviewerIds = new Set(
-      (tahap === 2 ? inovasi.penilai_tahap2 : inovasi.penilai).map((reviewer) => reviewer.id),
-    );
-    const requestedReviewerIds = new Set(penilaiIds);
-    const signatures = await this.prisma.usulinSignature.findMany({
-      where: { usulan_id: inovasiId, tahap },
-      select: { user_id: true },
-    });
-    if (signatures.length) {
-      if (penilaiIds.some((id) => !currentReviewerIds.has(id))) {
-        throw new BadRequestException('Penilai baru tidak dapat ditambahkan setelah ada tanda tangan');
+      if (tahap === 2 && inovasi.status !== StatusInovasi.SELESAI_EVALUASI) throw new BadRequestException('Tahap 1 belum selesai');
+      const currentReviewerIds = new Set(
+        (tahap === 2 ? inovasi.penilai_tahap2 : inovasi.penilai).map((reviewer) => reviewer.id),
+      );
+      const requestedReviewerIds = new Set(penilaiIds);
+      const signatures = await tx.usulinSignature.findMany({
+        where: { usulan_id: inovasiId, tahap },
+        select: { user_id: true },
+      });
+      if (signatures.length) {
+        if (penilaiIds.some((id) => !currentReviewerIds.has(id))) {
+          throw new BadRequestException('Penilai baru tidak dapat ditambahkan setelah ada tanda tangan');
+        }
+        if (signatures.some((signature) => !requestedReviewerIds.has(signature.user_id))) {
+          throw new BadRequestException('Penilai yang sudah menandatangani tidak dapat dihapus');
+        }
       }
-      if (signatures.some((signature) => !requestedReviewerIds.has(signature.user_id))) {
-        throw new BadRequestException('Penilai yang sudah menandatangani tidak dapat dihapus');
-      }
-    }
-    return this.prisma.inovasi.update({
-      where: { id: inovasiId },
-      data: {
-        [tahap === 2 ? "penilai_tahap2" : "penilai"]: { set: penilaiIds.map((id) => ({ id })) },
-      },
-      include: this.includeConfig,
+      return tx.inovasi.update({
+        where: { id: inovasiId },
+        data: {
+          [tahap === 2 ? 'penilai_tahap2' : 'penilai']: { set: penilaiIds.map((id) => ({ id })) },
+        },
+        include: this.includeConfig,
+      });
     });
   }
 

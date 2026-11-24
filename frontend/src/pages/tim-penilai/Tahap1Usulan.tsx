@@ -188,7 +188,7 @@ export default function Tahap1Usulan({ tahap = 1, mode = 'PENILAIAN' }: { tahap?
   }
 
   const saveAssignment = async () => {
-    if (!assignmentTarget || !selectedReviewers.size) return
+    if (!assignmentTarget) return
     setAssignmentSaving(true)
     setAssignmentError('')
     try {
@@ -523,7 +523,7 @@ export default function Tahap1Usulan({ tahap = 1, mode = 'PENILAIAN' }: { tahap?
               </select>
             </label>
             <div>
-              <label htmlFor="reviewer-picker" className="mb-2 block text-xs font-bold uppercase tracking-wide text-slate-500">Akun penilai <span className="text-rose-600">*</span></label>
+              <label htmlFor="reviewer-picker" className="mb-2 block text-xs font-bold uppercase tracking-wide text-slate-500">Akun penilai</label>
               <div className="flex min-h-14 flex-wrap items-center gap-2 rounded-2xl border border-slate-300 px-3 py-2 focus-within:border-teal-500 focus-within:ring-2 focus-within:ring-teal-100">
                 {[...selectedReviewers].map((reviewerId) => {
                   const reviewer = reviewersForAssignment.find((candidate) => String(candidate.id) === reviewerId)
@@ -540,15 +540,17 @@ export default function Tahap1Usulan({ tahap = 1, mode = 'PENILAIAN' }: { tahap?
                   {availableReviewers.map((reviewer) => <option key={reviewer.id} value={reviewer.id}>{reviewer.nama_lengkap}</option>)}
                 </select>
               </div>
+              <p className="mt-1 text-xs text-slate-500">Hapus akun yang belum TTD lewat tombol ×. Akun yang sudah TTD tetap terkunci dan tidak dapat dihapus.</p>
               {signedReviewerIds.size > 0 && <p className="mt-1 text-xs text-amber-700">Reviewer baru tidak dapat ditambahkan setelah tanda tangan masuk pada tahap ini. Aturan ini tidak mengunci penugasan tahap lainnya.</p>}
             </div>
 
+            {selectedReviewers.size === 0 && assignedReviewerIds.size > 0 && <p className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">Semua penugasan reviewer yang belum TTD akan dihapus dari tahap ini.</p>}
             {assignmentError && <div role="alert" className="rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">{assignmentError}</div>}
           </div>
 
           <footer className="flex justify-end gap-3 border-t border-slate-200 px-5 py-5 sm:px-8">
             <button type="button" disabled={assignmentSaving} onClick={() => setAssignmentTarget(null)} className="rounded-xl border border-slate-300 px-5 py-3 font-medium text-slate-600 transition hover:bg-slate-50 disabled:opacity-50">Batal</button>
-            <button type="button" disabled={assignmentSaving || !selectedReviewers.size} onClick={() => void saveAssignment()} className="rounded-xl bg-teal-700 px-6 py-3 font-semibold text-white transition hover:bg-teal-800 disabled:cursor-not-allowed disabled:opacity-50">{assignmentSaving ? 'Menyimpan...' : 'Simpan Penugasan'}</button>
+            <button type="button" disabled={assignmentSaving || (selectedReviewers.size === 0 && assignedReviewerIds.size === 0)} onClick={() => void saveAssignment()} className="rounded-xl bg-teal-700 px-6 py-3 font-semibold text-white transition hover:bg-teal-800 disabled:cursor-not-allowed disabled:opacity-50">{assignmentSaving ? 'Menyimpan...' : selectedReviewers.size === 0 && assignedReviewerIds.size > 0 ? 'Hapus Penugasan' : 'Simpan Penugasan'}</button>
           </footer>
         </section>
       </div>}
