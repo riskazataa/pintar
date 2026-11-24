@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import axios from 'axios'
 import YearSelect from '../../components/YearSelect'
-import { assignPenilaiBulk, assignPenilaiBySatkerBulk, getAkunTimPenilai, getUsulanList } from '../../services/inovasi.service'
+import { assignPenilaiBulk, assignPenilaiBySatkerBulk, getAkunTimPenilai, getUsulanList, removePenilaiBulk } from '../../services/inovasi.service'
 
 interface Reviewer { id: number; nama_lengkap: string; role: string }
 interface Proposal {
@@ -19,6 +19,7 @@ interface Proposal {
 }
 
 type AssignmentMode = 'INOVASI' | 'SATKER'
+type BulkAction = 'ASSIGN' | 'REMOVE'
 type SatkerGroup = { id: number; nama: string; proposals: Proposal[] }
 
 function proposalSatkerId(proposal: Proposal) {
@@ -28,6 +29,22 @@ function proposalSatkerId(proposal: Proposal) {
 
 function isSignedForStage(proposal: Proposal, stage: 1 | 2) {
   return proposal.usulan_signatures?.some((signature) => signature.tahap === stage) ?? false
+}
+
+function reviewersForStage(proposal: Proposal, stage: 1 | 2) {
+  return stage === 1 ? proposal.penilai ?? [] : proposal.penilai_tahap2 ?? []
+}
+
+function reviewerHasSigned(proposal: Proposal, stage: 1 | 2, reviewerId: number) {
+  return proposal.usulan_signatures?.some((signature) => signature.tahap === stage && signature.user_id === reviewerId) ?? false
+}
+
+function hasUnsignedAssignment(proposal: Proposal, stage: 1 | 2) {
+  return reviewersForStage(proposal, stage).some((reviewer) => !reviewerHasSigned(proposal, stage, reviewer.id))
+}
+
+function hasSelectedUnsignedAssignment(proposal: Proposal, stage: 1 | 2, reviewerIds: Set<number>) {
+  return reviewersForStage(proposal, stage).some((reviewer) => reviewerIds.has(reviewer.id) && !reviewerHasSigned(proposal, stage, reviewer.id))
 }
 
 function errorMessage(error: unknown) {
@@ -40,6 +57,7 @@ export default function PenugasanMassal() {
   const [year, setYear] = useState(String(new Date().getFullYear()))
   const [stage, setStage] = useState<1 | 2>(1)
   const [assignmentMode, setAssignmentMode] = useState<AssignmentMode>('INOVASI')
+  const [bulkAction, setBulkAction] = useState<BulkAction>('ASSIGN')
   const [proposals, setProposals] = useState<Proposal[]>([])
   const [reviewers, setReviewers] = useState<Reviewer[]>([])
   const [selectedProposals, setSelectedProposals] = useState<Set<number>>(new Set())
@@ -99,12 +117,24 @@ export default function PenugasanMassal() {
       .sort((a, b) => a.nama.localeCompare(b.nama, 'id'))
   }, [proposals, search])
 
-  const assignableVisible = visibleProposals.filter((proposal) => !isSignedForStage(proposal, stage))
-  const assignableVisibleSatkers = visibleSatkers.filter((satker) => satker.proposals.some((proposal) => !isSignedForStage(proposal, stage)))
+  const selectableVisible = visibleProposals.filter((proposal) => bulkAction === 'ASSIGN'
+    ? !isSignedForStage(proposal, stage)
+    : hasUnsignedAssignment(proposal, stage))
+  const selectableVisibleSatkers = visibleSatkers.filter((satker) => satker.proposals.some((proposal) => bulkAction === 'ASSIGN'
+    ? !isSignedForStage(proposal, stage)
+    : hasUnsignedAssignment(proposal, stage)))
+  const selectedProposalIdsForAction = proposals
+    .filter((proposal) => selectedProposals.has(proposal.id) && (bulkAction === 'ASSIGN'
+      ? !isSignedForStage(proposal, stage)
+      : hasSelectedUnsignedAssignment(proposal, stage, selectedReviewers)))
+    .map((proposal) => proposal.id)
   const selectedSatkerProposalIds = proposals
     .filter((proposal) => {
       const id = proposalSatkerId(proposal)
-      return id !== null && selectedSatkers.has(id) && !isSignedForStage(proposal, stage)
+      if (id === null || !selectedSatkers.has(id)) return false
+      return bulkAction === 'ASSIGN'
+        ? !isSignedForStage(proposal, stage)
+        : hasSelectedUnsignedAssignment(proposal, stage, selectedReviewers)
     })
     .map((proposal) => proposal.id)
   const selectedReviewerNames = reviewers.filter((reviewer) => selectedReviewers.has(reviewer.id)).map((reviewer) => reviewer.nama_lengkap)
@@ -117,9 +147,9 @@ export default function PenugasanMassal() {
   })
 
   const toggleAllVisible = () => setSelectedProposals((current) => {
-    const allSelected = assignableVisible.length > 0 && assignableVisible.every((proposal) => current.has(proposal.id))
+    const allSelected = selectableVisible.length > 0 && selectableVisible.every((proposal) => current.has(proposal.id))
     const next = new Set(current)
-    assignableVisible.forEach((proposal) => allSelected ? next.delete(proposal.id) : next.add(proposal.id))
+    selectableVisible.forEach((proposal) => allSelected ? next.delete(proposal.id) : next.add(proposal.id))
     return next
   })
 
@@ -131,9 +161,9 @@ export default function PenugasanMassal() {
   })
 
   const toggleAllVisibleSatkers = () => setSelectedSatkers((current) => {
-    const allSelected = assignableVisibleSatkers.length > 0 && assignableVisibleSatkers.every((satker) => current.has(satker.id))
+    const allSelected = selectableVisibleSatkers.length > 0 && selectableVisibleSatkers.every((satker) => current.has(satker.id))
     const next = new Set(current)
-    assignableVisibleSatkers.forEach((satker) => allSelected ? next.delete(satker.id) : next.add(satker.id))
+    selectableVisibleSatkers.forEach((satker) => allSelected ? next.delete(satker.id) : next.add(satker.id))
     return next
   })
 
@@ -144,19 +174,40 @@ export default function PenugasanMassal() {
     setSearch('')
   }
 
+  const changeBulkAction = (action: BulkAction) => {
+    setBulkAction(action)
+    setSelectedProposals((current) => new Set([...current].filter((id) => {
+      const proposal = proposals.find((candidate) => candidate.id === id)
+      return proposal && (action === 'ASSIGN' ? !isSignedForStage(proposal, stage) : hasUnsignedAssignment(proposal, stage))
+    })))
+    setSelectedSatkers((current) => new Set([...current].filter((id) => {
+      const satker = visibleSatkers.find((candidate) => candidate.id === id)
+      return satker?.proposals.some((proposal) => action === 'ASSIGN' ? !isSignedForStage(proposal, stage) : hasUnsignedAssignment(proposal, stage))
+    })))
+  }
+
   const submitAssignment = async () => {
     setSaving(true)
     setError('')
     try {
-      const result = assignmentMode === 'SATKER'
-        ? await assignPenilaiBySatkerBulk([...selectedSatkers], [...selectedReviewers], Number(year), stage)
-        : await assignPenilaiBulk([...selectedProposals], [...selectedReviewers], stage)
+      const proposalIds = assignmentMode === 'SATKER' ? selectedSatkerProposalIds : selectedProposalIdsForAction
+      const result = bulkAction === 'REMOVE'
+        ? await removePenilaiBulk(proposalIds, [...selectedReviewers], stage)
+        : assignmentMode === 'SATKER'
+          ? await assignPenilaiBySatkerBulk([...selectedSatkers], [...selectedReviewers], Number(year), stage)
+            : await assignPenilaiBulk(selectedProposalIdsForAction, [...selectedReviewers], stage)
       const updated = Number(result.data?.updated ?? 0)
       const skippedSigned = Number(result.data?.skipped_signed ?? 0)
       const assignedMessage = assignmentMode === 'SATKER'
         ? `${updated} usulan dari ${selectedSatkers.size} Satker berhasil ditugaskan ke ${selectedReviewerNames.length} penilai.`
         : `${updated} usulan berhasil ditugaskan ke ${selectedReviewerNames.length} penilai.`
-      setMessage(`${assignedMessage}${skippedSigned ? ` ${skippedSigned} usulan dilewati karena sudah ditandatangani.` : ''}`)
+      const actionMessage = bulkAction === 'REMOVE'
+        ? `${Number(result.data?.removed ?? 0)} penugasan reviewer berhasil dihapus; ${updated} usulan diperbarui.`
+        : assignedMessage
+      const skippedMessage = bulkAction === 'REMOVE'
+        ? skippedSigned ? ` ${skippedSigned} penugasan dipertahankan karena reviewer sudah TTD.` : ''
+        : skippedSigned ? ` ${skippedSigned} usulan dilewati karena sudah ditandatangani.` : ''
+      setMessage(`${actionMessage}${skippedMessage}`)
       setConfirmOpen(false)
       setSelectedProposals(new Set())
       setSelectedSatkers(new Set())
@@ -171,8 +222,9 @@ export default function PenugasanMassal() {
     }
   }
 
-  const selectedTargetCount = assignmentMode === 'SATKER' ? selectedSatkerProposalIds.length : selectedProposals.size
-  const canSelectAll = assignmentMode === 'SATKER' ? assignableVisibleSatkers.length > 0 : assignableVisible.length > 0
+  const selectedTargetCount = assignmentMode === 'SATKER' ? selectedSatkerProposalIds.length : selectedProposalIdsForAction.length
+  const canSelectAll = assignmentMode === 'SATKER' ? selectableVisibleSatkers.length > 0 : selectableVisible.length > 0
+  const tooManyTargets = selectedTargetCount > 200 && (bulkAction === 'REMOVE' || assignmentMode === 'INOVASI')
 
   return <div className="space-y-5">
     <header className="flex flex-col gap-4 rounded-2xl border border-slate-200 bg-gradient-to-r from-white via-white to-teal-50/70 p-5 shadow-sm sm:flex-row sm:items-center sm:justify-between sm:px-6">
@@ -206,7 +258,7 @@ export default function PenugasanMassal() {
         <div className="grid gap-2 sm:grid-cols-2" role="group" aria-label="Dasar penugasan reviewer">
           {([
             { value: 'INOVASI', title: 'Per Inovasi', detail: 'Pilih usulan satu per satu.', icon: '◇' },
-            { value: 'SATKER', title: 'Per Satker', detail: 'Tugaskan seluruh usulan satu Satker.', icon: '▦' },
+            { value: 'SATKER', title: 'Per Satker', detail: bulkAction === 'REMOVE' ? 'Hapus reviewer dari usulan satu Satker.' : 'Tugaskan seluruh usulan satu Satker.', icon: '▦' },
           ] as const).map((option) => <button key={option.value} type="button" aria-pressed={assignmentMode === option.value} onClick={() => changeAssignmentMode(option.value)} className={`flex min-h-[72px] items-center gap-3 rounded-xl border p-3 text-left transition ${assignmentMode === option.value ? 'border-teal-600 bg-teal-50 ring-1 ring-teal-600/10' : 'border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50'}`}>
             <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-lg ${assignmentMode === option.value ? 'bg-teal-700 text-white' : 'bg-slate-100 text-slate-500'}`}>{option.icon}</span>
             <span className="min-w-0"><span className={`block text-sm font-semibold ${assignmentMode === option.value ? 'text-teal-900' : 'text-slate-700'}`}>{option.title}</span><span className="mt-0.5 block text-xs leading-4 text-slate-500">{option.detail}</span></span>
@@ -223,7 +275,9 @@ export default function PenugasanMassal() {
         <div className="flex flex-col gap-3 border-b border-slate-100 px-4 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-5">
           <div className="flex items-center gap-3">
             <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-blue-50 text-sm font-bold text-blue-700">1</span>
-            <div><h2 className="font-semibold text-slate-900">{assignmentMode === 'SATKER' ? 'Pilih Satker' : 'Pilih usulan'}</h2><p className="mt-0.5 text-xs text-slate-500">{assignmentMode === 'SATKER' ? 'Semua usulan yang belum ditandatangani di Satker terpilih akan ditugaskan.' : 'Pilih satu atau beberapa inovasi yang akan ditugaskan.'}</p></div>
+            <div><h2 className="font-semibold text-slate-900">{assignmentMode === 'SATKER' ? 'Pilih Satker' : 'Pilih usulan'}</h2><p className="mt-0.5 text-xs text-slate-500">{assignmentMode === 'SATKER'
+              ? bulkAction === 'REMOVE' ? 'Pilih Satker untuk menghapus reviewer dari usulan yang belum ditandatangani reviewer tersebut.' : 'Semua usulan yang belum ditandatangani di Satker terpilih akan ditugaskan.'
+              : bulkAction === 'REMOVE' ? 'Pilih beberapa inovasi untuk menghapus reviewer yang dipilih.' : 'Pilih satu atau beberapa inovasi yang akan ditugaskan.'}</p></div>
           </div>
           <span className="w-fit rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-600">{assignmentMode === 'SATKER' ? `${visibleSatkers.length} Satker` : `${visibleProposals.length} usulan`}</span>
         </div>
@@ -239,8 +293,8 @@ export default function PenugasanMassal() {
           </div>
           <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
             <p className="text-slate-600">{assignmentMode === 'SATKER'
-              ? <><span className="font-semibold text-slate-800">{selectedSatkers.size} Satker</span> dipilih · <span className="font-semibold text-teal-800">{selectedSatkerProposalIds.length} usulan</span> akan ditugaskan</>
-              : <><span className="font-semibold text-slate-800">{selectedProposals.size} usulan</span> dipilih</>}</p>
+              ? <><span className="font-semibold text-slate-800">{selectedSatkers.size} Satker</span> dipilih · <span className="font-semibold text-teal-800">{selectedSatkerProposalIds.length} usulan</span> {bulkAction === 'REMOVE' ? 'akan dihapus penugasannya' : 'akan ditugaskan'}</>
+              : <><span className="font-semibold text-slate-800">{selectedTargetCount} usulan</span> dipilih</>}</p>
             {(assignmentMode === 'SATKER' ? selectedSatkers.size > 0 : selectedProposals.size > 0) && <button type="button" onClick={() => assignmentMode === 'SATKER' ? setSelectedSatkers(new Set()) : setSelectedProposals(new Set())} className="font-semibold text-teal-700 hover:text-teal-900">Hapus pilihan</button>}
           </div>
         </div>
@@ -259,13 +313,15 @@ export default function PenugasanMassal() {
             <tbody className="divide-y divide-slate-100">
               {loading ? <tr><td colSpan={5} className="px-4 py-14 text-center"><span className="inline-flex items-center gap-2 text-sm text-slate-500"><span className="h-4 w-4 animate-spin rounded-full border-2 border-slate-200 border-t-teal-600" />Memuat data penugasan...</span></td></tr>
                 : assignmentMode === 'SATKER' ? visibleSatkers.length === 0 ? <tr><td colSpan={5} className="px-4 py-14 text-center"><p className="font-medium text-slate-700">Satker tidak ditemukan</p><p className="mt-1 text-xs text-slate-500">Coba ubah kata pencarian atau tahun pengajuan.</p></td></tr> : visibleSatkers.map((satker, index) => {
-                  const eligibleProposals = satker.proposals.filter((proposal) => !isSignedForStage(proposal, stage))
+                  const eligibleProposals = satker.proposals.filter((proposal) => bulkAction === 'ASSIGN'
+                    ? !isSignedForStage(proposal, stage)
+                    : hasUnsignedAssignment(proposal, stage))
                   const signedCount = satker.proposals.length - eligibleProposals.length
                   const assignedCount = eligibleProposals.filter((proposal) => (stage === 1 ? proposal.penilai : proposal.penilai_tahap2 ?? proposal.penilai)?.length).length
                   const reviewerNames = [...new Set(eligibleProposals.flatMap((proposal) => (stage === 1 ? proposal.penilai : proposal.penilai_tahap2 ?? proposal.penilai)?.map((reviewer) => reviewer.nama_lengkap) ?? []))]
                   const selected = selectedSatkers.has(satker.id)
                   return <tr key={satker.id} className={`transition-colors ${eligibleProposals.length ? 'hover:bg-teal-50/40' : 'bg-slate-50/60'} ${selected ? 'bg-teal-50/70' : ''}`}>
-                    <td className="px-3 py-3 text-center"><input type="checkbox" aria-label={`Pilih semua usulan dari ${satker.nama}`} checked={selected} disabled={!eligibleProposals.length} title={!eligibleProposals.length ? 'Semua usulan sudah memiliki tanda tangan pada tahap ini' : undefined} onChange={() => toggleSatker(satker.id)} className="h-4 w-4 rounded border-slate-300 text-teal-700 focus:ring-teal-600 disabled:cursor-not-allowed disabled:opacity-30" /></td>
+                    <td className="px-3 py-3 text-center"><input type="checkbox" aria-label={`Pilih semua usulan dari ${satker.nama}`} checked={selected} disabled={!eligibleProposals.length} title={!eligibleProposals.length ? bulkAction === 'REMOVE' ? 'Tidak ada penugasan yang dapat dihapus pada tahap ini' : 'Semua usulan sudah memiliki tanda tangan pada tahap ini' : undefined} onChange={() => toggleSatker(satker.id)} className="h-4 w-4 rounded border-slate-300 text-teal-700 focus:ring-teal-600 disabled:cursor-not-allowed disabled:opacity-30" /></td>
                     <td className="px-2 py-3 text-center tabular-nums text-slate-400">{index + 1}</td>
                     <td className="px-4 py-3"><p className="font-medium text-slate-800">{satker.nama}</p><p className="mt-1 text-xs text-slate-500">{satker.proposals.length} usulan{signedCount ? ` · ${signedCount} sudah ditandatangani` : ''}</p></td>
                     <td className="px-4 py-3"><span className={`inline-flex min-w-8 justify-center rounded-full px-2.5 py-1 text-xs font-semibold tabular-nums ${eligibleProposals.length ? 'bg-teal-50 text-teal-800' : 'bg-slate-100 text-slate-500'}`}>{eligibleProposals.length}</span><span className="ml-2 text-xs text-slate-500">usulan</span></td>
@@ -274,9 +330,10 @@ export default function PenugasanMassal() {
                 }) : visibleProposals.length === 0 ? <tr><td colSpan={5} className="px-4 py-14 text-center"><p className="font-medium text-slate-700">Usulan tidak ditemukan</p><p className="mt-1 text-xs text-slate-500">Coba ubah kata pencarian atau tahun pengajuan.</p></td></tr> : visibleProposals.map((proposal, index) => {
                   const assigned = stage === 1 ? proposal.penilai ?? [] : proposal.penilai_tahap2 ?? proposal.penilai ?? []
                   const signed = isSignedForStage(proposal, stage)
+                  const selectionBlocked = bulkAction === 'ASSIGN' ? signed : !hasUnsignedAssignment(proposal, stage)
                   const status = stage === 1 ? proposal.status : proposal.status_tahap2 ?? proposal.status
                   return <tr key={proposal.id} className={`transition-colors ${signed ? 'bg-slate-50/60' : 'hover:bg-teal-50/40'} ${selectedProposals.has(proposal.id) ? 'bg-teal-50/70' : ''}`}>
-                    <td className="px-3 py-3 text-center"><input type="checkbox" aria-label={`Pilih ${proposal.judul}`} checked={selectedProposals.has(proposal.id)} disabled={signed} title={signed ? 'Usulan sudah memiliki tanda tangan pada tahap ini' : undefined} onChange={() => toggleProposal(proposal.id)} className="h-4 w-4 rounded border-slate-300 text-teal-700 focus:ring-teal-600 disabled:cursor-not-allowed disabled:opacity-30" /></td>
+                    <td className="px-3 py-3 text-center"><input type="checkbox" aria-label={`Pilih ${proposal.judul}`} checked={selectedProposals.has(proposal.id)} disabled={selectionBlocked} title={selectionBlocked ? bulkAction === 'REMOVE' ? 'Tidak ada penugasan yang dapat dihapus pada tahap ini' : 'Usulan sudah memiliki tanda tangan pada tahap ini' : undefined} onChange={() => toggleProposal(proposal.id)} className="h-4 w-4 rounded border-slate-300 text-teal-700 focus:ring-teal-600 disabled:cursor-not-allowed disabled:opacity-30" /></td>
                     <td className="px-2 py-3 text-center tabular-nums text-slate-400">{index + 1}</td>
                     <td className="px-4 py-3"><p className="font-medium text-slate-800">{proposal.judul}</p><p className="mt-1 text-xs text-slate-500">{proposal.satker?.nama_satker ?? 'Satker tidak diketahui'}{proposal.pic_nama ? ` · ${proposal.pic_nama}` : ''}</p></td>
                     <td className="px-4 py-3"><span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-medium ${status === 'PERBAIKAN' ? 'bg-amber-100 text-amber-800' : signed ? 'bg-slate-200 text-slate-600' : 'bg-blue-50 text-blue-700'}`}>{status?.replaceAll('_', ' ') ?? 'PENDING'}</span>{signed && <p className="mt-1 text-xs text-slate-500">Terkunci: sudah tanda tangan</p>}</td>
@@ -298,6 +355,11 @@ export default function PenugasanMassal() {
             </div>
           </header>
 
+          <div className="grid grid-cols-2 gap-2 border-b border-slate-100 p-3" role="group" aria-label="Aksi penugasan reviewer">
+            <button type="button" aria-pressed={bulkAction === 'ASSIGN'} onClick={() => changeBulkAction('ASSIGN')} className={`rounded-lg border px-3 py-2 text-sm font-semibold transition ${bulkAction === 'ASSIGN' ? 'border-teal-700 bg-teal-700 text-white' : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50'}`}>Tugaskan</button>
+            <button type="button" aria-pressed={bulkAction === 'REMOVE'} onClick={() => changeBulkAction('REMOVE')} className={`rounded-lg border px-3 py-2 text-sm font-semibold transition ${bulkAction === 'REMOVE' ? 'border-rose-600 bg-rose-600 text-white' : 'border-slate-200 bg-white text-slate-600 hover:border-rose-200 hover:bg-rose-50 hover:text-rose-700'}`}>Hapus penugasan</button>
+          </div>
+
           <div className="max-h-[42vh] space-y-1 overflow-y-auto p-3 sm:p-4 xl:max-h-[55vh]">
             {reviewers.map((reviewer) => {
               const selected = selectedReviewers.has(reviewer.id)
@@ -317,11 +379,16 @@ export default function PenugasanMassal() {
           </div>
 
           <div className="border-t border-slate-100 bg-slate-50/70 p-4">
-            <p className="mb-3 text-xs leading-5 text-slate-500">Reviewer terpilih akan diterapkan ke {assignmentMode === 'SATKER' ? 'semua usulan yang dapat ditugaskan di Satker terpilih' : 'setiap inovasi yang dipilih'}.</p>
-            <div className="mb-3 flex items-center justify-between rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs"><span className="text-slate-500">Target penugasan</span><span className="font-semibold text-slate-800">{selectedTargetCount} usulan</span></div>
-            <button type="button" disabled={saving || !selectedTargetCount || !selectedReviewers.size} onClick={() => setConfirmOpen(true)} className="inline-flex h-11 w-full items-center justify-center gap-2 rounded-xl bg-teal-700 px-4 text-sm font-semibold text-white shadow-sm shadow-teal-900/10 transition hover:bg-teal-800 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-teal-100 disabled:cursor-not-allowed disabled:opacity-40">
-              <svg aria-hidden="true" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth={1.8} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M16 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2m12-13a4 4 0 1 1-8 0 4 4 0 0 1 8 0Zm4 3v6m3-3h-6"/></svg>
-              {saving ? 'Menyimpan penugasan...' : assignmentMode === 'SATKER' ? `Tugaskan ke ${selectedSatkers.size} Satker` : `Tugaskan ${selectedProposals.size} usulan`}
+            <p className="mb-3 text-xs leading-5 text-slate-500">{bulkAction === 'REMOVE'
+              ? 'Akun reviewer yang dipilih akan dihapus dari usulan terpilih. Penilai lain tetap ditugaskan; reviewer yang sudah TTD dipertahankan.'
+              : `Reviewer terpilih akan diterapkan ke ${assignmentMode === 'SATKER' ? 'semua usulan yang dapat ditugaskan di Satker terpilih' : 'setiap inovasi yang dipilih'}.`}</p>
+            <div className="mb-3 flex items-center justify-between rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs"><span className="text-slate-500">Target usulan</span><span className="font-semibold text-slate-800">{selectedTargetCount}</span></div>
+            {tooManyTargets && <p className="mb-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs leading-5 text-amber-800">Maksimal 200 usulan dapat diproses dalam satu kali aksi. Kurangi pilihan usulan.</p>}
+            <button type="button" disabled={saving || !selectedTargetCount || !selectedReviewers.size || tooManyTargets} onClick={() => setConfirmOpen(true)} className={`inline-flex h-11 w-full items-center justify-center gap-2 rounded-xl px-4 text-sm font-semibold text-white shadow-sm transition focus-visible:outline-none focus-visible:ring-4 disabled:cursor-not-allowed disabled:opacity-40 ${bulkAction === 'REMOVE' ? 'bg-rose-600 shadow-rose-900/10 hover:bg-rose-700 focus-visible:ring-rose-100' : 'bg-teal-700 shadow-teal-900/10 hover:bg-teal-800 focus-visible:ring-teal-100'}`}>
+              {bulkAction === 'REMOVE'
+                ? <svg aria-hidden="true" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth={1.8} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M4 7h16M10 11v6m4-6v6M5.5 7l1 13h11l1-13M9 7V4h6v3"/></svg>
+                : <svg aria-hidden="true" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth={1.8} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M16 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2m12-13a4 4 0 1 1-8 0 4 4 0 0 1 8 0Zm4 3v6m3-3h-6"/></svg>}
+              {saving ? 'Memproses...' : bulkAction === 'REMOVE' ? `Hapus penugasan (${selectedTargetCount})` : assignmentMode === 'SATKER' ? `Tugaskan ke ${selectedSatkers.size} Satker` : `Tugaskan ${selectedTargetCount} usulan`}
             </button>
           </div>
         </section>
@@ -331,16 +398,22 @@ export default function PenugasanMassal() {
     {confirmOpen && <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/45 p-4 backdrop-blur-sm" onMouseDown={(event) => { if (event.target === event.currentTarget && !saving) setConfirmOpen(false) }}>
       <section role="dialog" aria-modal="true" aria-labelledby="bulk-assignment-title" className="w-full max-w-lg overflow-hidden rounded-2xl border border-white/70 bg-white shadow-2xl shadow-slate-950/20">
         <div className="p-5 sm:p-6">
-          <div className="mb-4 flex h-11 w-11 items-center justify-center rounded-xl bg-teal-50 text-teal-700"><svg className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth={1.8} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M16 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2m12-13a4 4 0 1 1-8 0 4 4 0 0 1 8 0Zm4 3v6m3-3h-6" /></svg></div>
-          <h2 id="bulk-assignment-title" className="text-lg font-semibold text-slate-900">Konfirmasi penugasan reviewer</h2>
-          <p className="mt-2 text-sm leading-6 text-slate-600">{assignmentMode === 'SATKER'
-            ? `${selectedSatkers.size} Satker dipilih (${selectedSatkerProposalIds.length} usulan yang belum ditandatangani) akan ditugaskan kepada ${selectedReviewerNames.join(', ')} untuk Tahap ${stage}.`
-            : `${selectedProposals.size} usulan akan ditugaskan kepada ${selectedReviewerNames.join(', ')} untuk Tahap ${stage}.`}</p>
-          <p className="mt-4 rounded-xl border border-amber-200 bg-amber-50 px-3.5 py-3 text-xs leading-5 text-amber-900">Penilai yang sudah ada pada target terpilih akan diganti. Usulan yang sudah ditandatangani tidak akan diubah.</p>
+          <div className={`mb-4 flex h-11 w-11 items-center justify-center rounded-xl ${bulkAction === 'REMOVE' ? 'bg-rose-50 text-rose-700' : 'bg-teal-50 text-teal-700'}`}>
+            {bulkAction === 'REMOVE' ? <svg className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth={1.8} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M4 7h16M10 11v6m4-6v6M5.5 7l1 13h11l1-13M9 7V4h6v3"/></svg> : <svg className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth={1.8} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M16 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2m12-13a4 4 0 1 1-8 0 4 4 0 0 1 8 0Zm4 3v6m3-3h-6" /></svg>}
+          </div>
+          <h2 id="bulk-assignment-title" className="text-lg font-semibold text-slate-900">{bulkAction === 'REMOVE' ? 'Konfirmasi hapus penugasan' : 'Konfirmasi penugasan reviewer'}</h2>
+          <p className="mt-2 text-sm leading-6 text-slate-600">{bulkAction === 'REMOVE'
+            ? `${selectedReviewerNames.join(', ')} akan dihapus dari ${selectedTargetCount} usulan untuk Tahap ${stage}. Penilai lain pada usulan tetap dipertahankan.`
+            : assignmentMode === 'SATKER'
+              ? `${selectedSatkers.size} Satker dipilih (${selectedSatkerProposalIds.length} usulan yang belum ditandatangani) akan ditugaskan kepada ${selectedReviewerNames.join(', ')} untuk Tahap ${stage}.`
+              : `${selectedTargetCount} usulan akan ditugaskan kepada ${selectedReviewerNames.join(', ')} untuk Tahap ${stage}.`}</p>
+          <p className={`mt-4 rounded-xl border px-3.5 py-3 text-xs leading-5 ${bulkAction === 'REMOVE' ? 'border-rose-200 bg-rose-50 text-rose-900' : 'border-amber-200 bg-amber-50 text-amber-900'}`}>{bulkAction === 'REMOVE'
+            ? 'Penugasan reviewer yang sudah tanda tangan tidak akan dihapus. Penugasan reviewer lain tidak berubah.'
+            : 'Penilai yang sudah ada pada target terpilih akan diganti. Usulan yang sudah ditandatangani tidak akan diubah.'}</p>
         </div>
         <div className="flex justify-end gap-2 border-t border-slate-100 bg-slate-50/70 px-5 py-4 sm:px-6">
           <button type="button" disabled={saving} onClick={() => setConfirmOpen(false)} className="h-10 rounded-lg border border-slate-200 bg-white px-4 text-sm font-medium text-slate-700 transition hover:bg-slate-50 disabled:opacity-50">Batal</button>
-          <button type="button" disabled={saving} onClick={submitAssignment} className="h-10 rounded-lg bg-teal-700 px-4 text-sm font-semibold text-white transition hover:bg-teal-800 disabled:opacity-50">{saving ? 'Menyimpan...' : 'Ya, tugaskan'}</button>
+          <button type="button" disabled={saving} onClick={submitAssignment} className={`h-10 rounded-lg px-4 text-sm font-semibold text-white transition disabled:opacity-50 ${bulkAction === 'REMOVE' ? 'bg-rose-600 hover:bg-rose-700' : 'bg-teal-700 hover:bg-teal-800'}`}>{saving ? 'Memproses...' : bulkAction === 'REMOVE' ? 'Ya, hapus penugasan' : 'Ya, tugaskan'}</button>
         </div>
       </section>
     </div>}

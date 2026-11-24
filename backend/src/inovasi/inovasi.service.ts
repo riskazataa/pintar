@@ -599,6 +599,70 @@ export class InovasiService {
     });
   }
 
+  async removePenilaiBulk(inovasiIds: number[], penilaiIds: number[], tahap = 1) {
+    this.validateTahap(tahap);
+    if (!Array.isArray(inovasiIds) || !inovasiIds.length || inovasiIds.length > 200 || inovasiIds.some((id) => !Number.isInteger(id) || id <= 0) || new Set(inovasiIds).size !== inovasiIds.length) {
+      throw new BadRequestException('Pilih maksimal 200 usulan yang valid');
+    }
+    if (!Array.isArray(penilaiIds) || !penilaiIds.length || penilaiIds.some((id) => !Number.isInteger(id) || id <= 0) || new Set(penilaiIds).size !== penilaiIds.length) {
+      throw new BadRequestException('Pilih akun penilai yang valid untuk dihapus');
+    }
+
+    return this.prisma.$transaction(async (tx) => {
+      await tx.$queryRaw<Array<{ id: number }>>`
+        SELECT id FROM "Inovasi"
+        WHERE id IN (${Prisma.join(inovasiIds)})
+        ORDER BY id
+        FOR UPDATE
+      `;
+
+      const proposals = await tx.inovasi.findMany({
+        where: { id: { in: inovasiIds } },
+        select: {
+          id: true,
+          penilai: { select: { id: true } },
+          penilai_tahap2: { select: { id: true } },
+          usulan_signatures: { where: { tahap }, select: { user_id: true } },
+        },
+      });
+      if (proposals.length !== inovasiIds.length) {
+        throw new NotFoundException('Beberapa usulan tidak ditemukan');
+      }
+
+      const relation = tahap === 2 ? 'penilai_tahap2' : 'penilai';
+      let removed = 0;
+      let skippedSigned = 0;
+      let skippedNotAssigned = 0;
+      let updated = 0;
+
+      for (const proposal of proposals) {
+        const assignedReviewers = tahap === 2 ? proposal.penilai_tahap2 : proposal.penilai;
+        const assignedIds = new Set(assignedReviewers.map((reviewer) => reviewer.id));
+        const signedIds = new Set(proposal.usulan_signatures.map((signature) => signature.user_id));
+        const removeIds = penilaiIds.filter((id) => assignedIds.has(id) && !signedIds.has(id));
+
+        skippedSigned += penilaiIds.filter((id) => assignedIds.has(id) && signedIds.has(id)).length;
+        skippedNotAssigned += penilaiIds.filter((id) => !assignedIds.has(id)).length;
+        if (!removeIds.length) continue;
+
+        await tx.inovasi.update({
+          where: { id: proposal.id },
+          data: {
+            [relation]: {
+              set: assignedReviewers
+                .filter((reviewer) => !removeIds.includes(reviewer.id))
+                .map((reviewer) => ({ id: reviewer.id })),
+            },
+          },
+        });
+        removed += removeIds.length;
+        updated += 1;
+      }
+
+      return { updated, removed, skipped_signed: skippedSigned, skipped_not_assigned: skippedNotAssigned, tahap };
+    });
+  }
+
   async assignPenilaiBySatkerBulk(satkerIds: number[], penilaiIds: number[], tahun: number, tahap = 1) {
     this.validateTahap(tahap);
     if (!Array.isArray(satkerIds) || !satkerIds.length || satkerIds.length > 200 || satkerIds.some((id) => !Number.isInteger(id) || id <= 0) || new Set(satkerIds).size !== satkerIds.length) {

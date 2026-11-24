@@ -128,6 +128,13 @@ export class InovasiController {
     return this.inovasiService.assignPenilaiBySatkerBulk(dto.satker_ids, dto.penilai_ids, dto.tahun, dto.tahap);
   }
 
+  @Patch('assign/bulk/remove')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('SUPER_ADMIN', 'REVIEWER')
+  async removePenilaiBulk(@Body() dto: BulkAssignPenilaiDto) {
+    return this.inovasiService.removePenilaiBulk(dto.inovasi_ids, dto.penilai_ids, dto.tahap);
+  }
+
   @Patch(':id/assign')
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles('SUPER_ADMIN', 'REVIEWER')

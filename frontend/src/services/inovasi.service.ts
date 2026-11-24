@@ -115,6 +115,9 @@ export const assignPenilai = (id: string | number, penilaiIds: (string | number)
 export const assignPenilaiBulk = (inovasiIds: number[], penilaiIds: number[], tahap = 1) =>
   api.patch('/inovasi/assign/bulk', { inovasi_ids: inovasiIds, penilai_ids: penilaiIds, tahap })
 
+export const removePenilaiBulk = (inovasiIds: number[], penilaiIds: number[], tahap = 1) =>
+  api.patch('/inovasi/assign/bulk/remove', { inovasi_ids: inovasiIds, penilai_ids: penilaiIds, tahap })
+
 export const assignPenilaiBySatkerBulk = (satkerIds: number[], penilaiIds: number[], tahun: number, tahap = 1) =>
   api.patch('/inovasi/assign/bulk/satker', { satker_ids: satkerIds, penilai_ids: penilaiIds, tahap, tahun })
 
