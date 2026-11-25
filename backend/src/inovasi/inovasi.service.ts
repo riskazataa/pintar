@@ -258,6 +258,12 @@ export class InovasiService {
           if (columnOwner === 'SATKER') return satkerHasCustomValue ? satkerValues[key] : answer[key];
           if (columnOwner === 'REVIEWER') return reviewerHasCustomValue ? reviewerValues[key] : reviewerAnswer[key];
           if (reviewerHasCustomValue) return reviewerValues[key];
+          if (key === 'jawaban_boolean') {
+            // Reviewer answer rows may be created just to save another column and default this
+            // legacy field to false. Only an explicit custom value should override the Satker checkbox.
+            if (reviewerAnswer[key] === true) return true;
+            return satkerHasCustomValue ? satkerValues[key] : answer[key];
+          }
           if (reviewerAnswer[key] !== undefined && reviewerAnswer[key] !== null) return reviewerAnswer[key];
           return satkerHasCustomValue ? satkerValues[key] : answer[key];
         };
@@ -383,10 +389,9 @@ export class InovasiService {
       };
     }
     const allSignatures = inovasi.usulan_signatures;
-    const savedAnswers = await this.getStage1Answers(
-      inovasi.assessment_answers,
-      view === 'evaluation' || (view !== 'self-assessment' && user?.role !== 'UNIT'),
-    );
+    const maySeeReviewerAnswers = (user?.role !== 'UNIT' && view !== 'self-assessment')
+      || (user?.role === 'UNIT' && inovasi.status === StatusInovasi.PERBAIKAN);
+    const savedAnswers = await this.getStage1Answers(inovasi.assessment_answers, maySeeReviewerAnswers);
     const showBlankTemplate = view === 'self-assessment'
       && inovasi.status !== StatusInovasi.DRAFT
       && savedAnswers.length === 0;
