@@ -31,6 +31,7 @@ import { SaveInovasiDraftDto } from './dto/save-inovasi-draft.dto';
 import { BulkAssignPenilaiDto } from './dto/bulk-assign-penilai.dto';
 import { BulkAssignSatkerDto } from './dto/bulk-assign-satker.dto';
 import { BulkSendBackForPerbaikanDto } from './dto/bulk-send-back-for-perbaikan.dto';
+import { UpdateAssessmentCellsDto } from './dto/update-assessment-cells.dto';
 
 @Controller('inovasi')
 export class InovasiController {
@@ -171,6 +172,17 @@ export class InovasiController {
     @Query('tahap', new DefaultValuePipe(1), ParseIntPipe) tahap: number,
   ) {
     return this.inovasiService.updateAssessmentByPenilai(id, dto, req.user, tahap);
+  }
+
+  @Patch(':id/assessment-penilai/cells')
+  @UseGuards(JwtAuthGuard)
+  async updateAssessmentCellsByPenilai(
+    @Param('id', ParseIntPipe) id: number,
+    @Body() dto: UpdateAssessmentCellsDto,
+    @Req() req: any,
+    @Query('tahap', new DefaultValuePipe(1), ParseIntPipe) tahap: number,
+  ) {
+    return this.inovasiService.updateAssessmentCellsByPenilai(id, dto, req.user, tahap);
   }
 
   @Patch(':id/assessment')

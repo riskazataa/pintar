@@ -4,6 +4,7 @@ import {
   NotFoundException,
   ForbiddenException,
   BadRequestException,
+  ConflictException,
 } from '@nestjs/common';
 import PDFDocument from 'pdfkit';
 import { PrismaService } from '../prisma/prisma.service';
@@ -12,6 +13,7 @@ import { CreateInovasiDto } from './dto/create-inovasi.dto';
 import { UpdateInovasiDto } from './dto/update-inovasi.dto';
 import { QueryInovasiDto } from './dto/query-inovasi.dto';
 import { UpdateAssessmentPenilaiDto } from './dto/update-assessment-penilai.dto';
+import { UpdateAssessmentCellsDto } from './dto/update-assessment-cells.dto';
 import { UpdateAssessmentAnswersDto } from './dto/update-assessment-answers.dto';
 import { SignInovasiDto } from './dto/sign-inovasi.dto';
 import { SaveInovasiDraftDto } from './dto/save-inovasi-draft.dto';
@@ -1298,6 +1300,154 @@ export class InovasiService {
     return { message: 'Inovasi berhasil dihapus' };
   }
 
+  async updateAssessmentCellsByPenilai(
+    inovasiId: number,
+    dto: UpdateAssessmentCellsDto,
+    user: { sub: number; role: string },
+    tahap = 1,
+  ) {
+    this.validateTahap(tahap);
+    const inovasi = await this.prisma.inovasi.findUnique({
+      where: { id: inovasiId },
+      include: { penilai: { select: { id: true } }, penilai_tahap2: { select: { id: true } } },
+    });
+    if (!inovasi) throw new NotFoundException('Inovasi tidak ditemukan');
+
+    const isAssigned = (tahap === 2 ? inovasi.penilai_tahap2 : inovasi.penilai).some((reviewer) => reviewer.id === user.sub);
+    if (!isAssigned) throw new ForbiddenException('Anda tidak ditugaskan sebagai penilai inovasi ini');
+
+    const status = tahap === 2 ? inovasi.status_tahap2 : inovasi.status;
+    if (status === StatusInovasi.PERBAIKAN) {
+      throw new ForbiddenException('Usulan sedang menunggu perbaikan Satker. Reviewer belum dapat mengedit penilaian.');
+    }
+    if (tahap === 2 && inovasi.status !== StatusInovasi.SELESAI_EVALUASI) {
+      throw new BadRequestException('Tahap 1 belum selesai');
+    }
+    if (await this.prisma.usulinSignature.count({ where: { usulan_id: inovasiId, tahap } })) {
+      throw new ForbiddenException('Penilaian sudah ditandatangani');
+    }
+
+    const { columns } = await loadTemplateConfig(this.prisma, tahap);
+    const allowedQuestionIds = new Set(tahap === 2
+      ? await this.getStage2QuestionIds(inovasiId)
+      : (await this.prisma.assessmentQuestion.findMany({
+          where: { tahap: 1, is_active: true },
+          select: { id: true },
+        })).map((question) => question.id));
+    const questionIds = [...new Set(dto.cells.map((cell) => cell.question_id))];
+    const questions = await this.prisma.assessmentQuestion.findMany({
+      where: { id: { in: questionIds } },
+      select: { id: true, is_header: true, question_title_override: true },
+    });
+    const questionById = new Map(questions.map((question) => [question.id, question]));
+    const cellKeys = new Set<string>();
+
+    for (const cell of dto.cells) {
+      const key = `${cell.question_id}:${cell.column_key}`;
+      if (cellKeys.has(key)) throw new BadRequestException('Sel yang sama hanya boleh dikirim sekali dalam satu penyimpanan.');
+      cellKeys.add(key);
+      if (!allowedQuestionIds.has(cell.question_id)) throw new BadRequestException('Pertanyaan tidak sesuai tahap');
+      const question = questionById.get(cell.question_id);
+      if (!question || question.is_header) throw new BadRequestException('Baris header tidak dapat diubah');
+      if (!['string', 'number', 'boolean'].includes(typeof cell.value)) throw new BadRequestException('Nilai kolom tidak valid');
+
+      if (cell.column_key === '__kesimpulan' || cell.column_key === '__kesimpulan_catatan') {
+        if (tahap !== 2 || question.question_title_override !== '__FINAL_CONCLUSION__') {
+          throw new BadRequestException('Kolom kesimpulan hanya tersedia pada baris Kesimpulan Penilaian Akhir');
+        }
+        if (typeof cell.value !== 'string') throw new BadRequestException('Kesimpulan harus berupa teks');
+        if (cell.column_key === '__kesimpulan' && cell.value !== '' && ![
+          'Tidak ada inovasi nilai 0',
+          'Diterima sebagai inovasi, dapat dihargai 0,5',
+          'Diterima sebagai inovasi percontohan nasional nilai 1',
+          'Lainnya',
+        ].includes(cell.value)) throw new BadRequestException('Pilih kesimpulan yang tersedia');
+        continue;
+      }
+
+      const column = columns.find((item) => item.key === cell.column_key);
+      if (!column || column.owner === 'SATKER' || column.type === 'readonly') {
+        throw new ForbiddenException('Kolom ini tidak dapat diubah oleh reviewer');
+      }
+      const empty = cell.value === '';
+      if (column.type === 'checkbox' && typeof cell.value !== 'boolean') throw new BadRequestException(`Kolom ${column.title} harus berupa centang`);
+      if (column.type === 'number' && !empty && (typeof cell.value !== 'number' || !Number.isFinite(cell.value))) throw new BadRequestException(`Kolom ${column.title} harus berupa angka`);
+      if (column.type === 'score' && !empty && (typeof cell.value !== 'number' || !Number.isInteger(cell.value) || cell.value < 1 || cell.value > 5)) throw new BadRequestException(`Kolom ${column.title} harus berupa skor 1–5`);
+      if (['select', 'radio'].includes(column.type) && !empty && (typeof cell.value !== 'string' || !(column.options ?? []).includes(cell.value))) throw new BadRequestException(`Pilih opsi yang tersedia pada kolom ${column.title}`);
+      if (column.type === 'url' && !empty) {
+        try {
+          const url = new URL(String(cell.value));
+          if (!['https:', 'http:'].includes(url.protocol)) throw new Error();
+        } catch {
+          throw new BadRequestException(`Kolom ${column.title} harus berupa tautan http/https`);
+        }
+      }
+      if ((column.type === 'text' || column.type === 'textarea') && this.containsWebLink(String(cell.value))) {
+        throw new BadRequestException(`Kolom ${column.title} hanya menerima teks, bukan tautan. Gunakan kolom dengan format Link.`);
+      }
+      if (column.type === 'date' && !empty && (typeof cell.value !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(cell.value) || Number.isNaN(Date.parse(cell.value)))) {
+        throw new BadRequestException(`Kolom ${column.title} harus berupa tanggal`);
+      }
+      if (['text', 'textarea', 'url', 'date'].includes(column.type) && typeof cell.value !== 'string') {
+        throw new BadRequestException(`Kolom ${column.title} harus berupa teks`);
+      }
+    }
+
+    await this.prisma.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT id FROM "Inovasi" WHERE id = ${inovasiId} FOR UPDATE`;
+      const latest = await tx.inovasi.findUnique({
+        where: { id: inovasiId },
+        include: { penilai: { select: { id: true } }, penilai_tahap2: { select: { id: true } } },
+      });
+      if (!latest) throw new NotFoundException('Inovasi tidak ditemukan');
+      const stillAssigned = (tahap === 2 ? latest.penilai_tahap2 : latest.penilai).some((reviewer) => reviewer.id === user.sub);
+      if (!stillAssigned) throw new ForbiddenException('Penugasan reviewer sudah berubah');
+      const latestStatus = tahap === 2 ? latest.status_tahap2 : latest.status;
+      if (latestStatus === StatusInovasi.PERBAIKAN) {
+        throw new ForbiddenException('Usulan sedang menunggu perbaikan Satker. Reviewer belum dapat mengedit penilaian.');
+      }
+      if (tahap === 2 && latest.status !== StatusInovasi.SELESAI_EVALUASI) throw new BadRequestException('Tahap 1 belum selesai');
+      if (await tx.usulinSignature.count({ where: { usulan_id: inovasiId, tahap } })) {
+        throw new ForbiddenException('Penilaian sudah ditandatangani');
+      }
+
+      for (const cell of dto.cells) {
+        const existing = await tx.assessmentAnswer.findFirst({
+          where: { inovasi_id: inovasiId, question_id: cell.question_id, tahap, source: 'PENILAI' },
+        });
+        const currentValues = existing?.custom_values && typeof existing.custom_values === 'object' && !Array.isArray(existing.custom_values)
+          ? existing.custom_values as Record<string, Prisma.InputJsonValue>
+          : {};
+        const customValues = { ...currentValues, [cell.column_key]: cell.value };
+        const data: Prisma.AssessmentAnswerUpdateInput = {
+          custom_values: customValues as Prisma.InputJsonObject,
+        };
+        if (cell.column_key === 'jawaban_boolean') data.jawaban_boolean = cell.value as boolean;
+        if (cell.column_key === 'catatan_string') data.catatan_string = cell.value as string;
+        if (cell.column_key === 'link') data.link = cell.value as string;
+
+        if (existing) {
+          await tx.assessmentAnswer.update({ where: { id: existing.id }, data });
+        } else {
+          await tx.assessmentAnswer.create({
+            data: {
+              inovasi_id: inovasiId,
+              question_id: cell.question_id,
+              tahap,
+              source: 'PENILAI',
+              jawaban_boolean: cell.column_key === 'jawaban_boolean' ? cell.value as boolean : false,
+              catatan_string: cell.column_key === 'catatan_string' ? cell.value as string : null,
+              link: cell.column_key === 'link' ? cell.value as string : null,
+              custom_values: customValues as Prisma.InputJsonObject,
+            },
+          });
+        }
+      }
+    });
+
+    return { message: 'Perubahan kolom berhasil tersimpan', updated_cells: dto.cells.length };
+  }
+
   async updateAssessmentByPenilai(
     inovasiId: number,
     dto: UpdateAssessmentPenilaiDto,
@@ -1312,6 +1462,11 @@ export class InovasiService {
 
     if (!inovasi) {
       throw new NotFoundException('Inovasi tidak ditemukan');
+    }
+
+    const assignedReviewers = tahap === 2 ? inovasi.penilai_tahap2 : inovasi.penilai;
+    if (assignedReviewers.length > 1) {
+      throw new ConflictException('Sesi penilaian kolaboratif sudah aktif. Muat ulang halaman agar penyimpanan per kolom dapat digunakan.');
     }
 
     const isPenilai = (tahap === 2 ? inovasi.penilai_tahap2 : inovasi.penilai).some((p) => p.id === user.sub);

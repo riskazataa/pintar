@@ -15,6 +15,10 @@ function getClickableUrl(value: unknown): string | null {
   }
 }
 
+function getAnswerValue(answer: any, values: Record<string, any>) {
+  return values[String(answer.question_id)] ?? values[String(answer.id)] ?? answer
+}
+
 export default function BAAnswerGrid({ answers, columns, values, disabled, onChange, questionTitle: _questionTitle, satkerMode = false, showRequiredErrors = false }: {
   satkerMode?: boolean
   questionTitle?: string
@@ -22,7 +26,7 @@ export default function BAAnswerGrid({ answers, columns, values, disabled, onCha
   columns: BAColumn[]
   values: Record<string, any>
   disabled: boolean
-  onChange: (id: string, value: any) => void
+  onChange: (id: string, value: any, columnKey?: string, questionId?: number) => void
   showRequiredErrors?: boolean
 }) {
   const scrollArea = useRef<HTMLDivElement>(null)
@@ -84,14 +88,14 @@ export default function BAAnswerGrid({ answers, columns, values, disabled, onCha
     </div>
     <div ref={scrollArea} className="relative overflow-x-auto overscroll-x-contain">
     <table className="w-max min-w-full table-fixed text-left text-sm">
-    <tbody>{rows.map(({ answer, no }) => answer.question?.question_title_override === CONCLUSION_MARKER ? <tr key={answer.id} className="border-t"><td colSpan={columns.length + 2} className="space-y-3 p-3"><p className="font-bold">{answer.question.pertanyaan}</p>{disabled || satkerMode ? <p className="whitespace-pre-wrap">{conclusionText(values[answer.id] ?? answer)}</p> : <><select aria-label="Kesimpulan penilaian akhir" className="w-full rounded-lg border p-2" value={(values[answer.id] ?? answer).custom_values?.__kesimpulan ?? ''} onChange={(event) => { const row = values[answer.id] ?? answer; onChange(String(answer.id), { ...row, custom_values: { ...row.custom_values, __kesimpulan: event.target.value } }) }}><option value="">Pilih kesimpulan</option>{CONCLUSION_OPTIONS.map((option) => <option key={option}>{option}</option>)}</select>{(values[answer.id] ?? answer).custom_values?.__kesimpulan === 'Lainnya' && <textarea aria-label="Catatan kesimpulan lainnya" placeholder="Isi catatan kesimpulan lainnya" className="w-full rounded-lg border p-2" rows={3} value={(values[answer.id] ?? answer).custom_values?.__kesimpulan_catatan ?? ''} onChange={(event) => { const row = values[answer.id] ?? answer; onChange(String(answer.id), { ...row, custom_values: { ...row.custom_values, __kesimpulan_catatan: event.target.value } }) }} />}</>}</td></tr> : answer.question?.is_header ? <><tr key={`section-${answer.id}`} className="border-t bg-slate-100"><td colSpan={columns.length + 2} className="px-3 py-3 font-bold text-slate-800">{answer.question.pertanyaan}</td></tr><tr key={`section-columns-${answer.id}`} className="bg-gray-50 text-xs font-semibold text-slate-700"><th className="w-14 p-3">No</th><th className="w-[24rem] min-w-[220px] max-w-[40vw] p-3">{answer.question.question_title_override || ''}</th>{columns.map((column, index) => <th key={column.key} className="w-[12rem] min-w-[9rem] max-w-[15rem] whitespace-normal break-words p-3">{answer.question.column_titles?.[index] || ''}</th>)}</tr></> : <tr key={answer.id} className="border-t">
-      <td className="w-14 p-3 align-top">{no}</td><td className="w-[24rem] min-w-[220px] max-w-[40vw] p-3 align-top break-words">{answer.source_stage && <span className={`mb-1.5 block w-fit rounded-full px-2 py-0.5 text-[10px] font-semibold ${answer.source_stage === 1 ? 'bg-indigo-50 text-indigo-600' : 'bg-emerald-50 text-emerald-700'}`}>{satkerMode ? (answer.source_stage === 1 ? 'Dari Tahap 1' : 'Tambahan Tahap 2') : (answer.source_stage === 1 ? `Dari ${getReviewerStageName(1)}` : `Tambahan ${getReviewerStageName(2)}`)}</span>}{satkerMode && !disabled && (answer.question?.satker_lock_mode ?? 'NONE') === 'NONE' ? <input aria-label="Rincian" placeholder="Isi rincian…" value={(values[answer.id] ?? answer).custom_values?.__rincian ?? answer.question?.pertanyaan ?? ''} onChange={(event) => { const row = values[answer.id] ?? answer; onChange(String(answer.id), { ...row, custom_values: { ...row.custom_values, __rincian: event.target.value } }) }} className="w-full rounded-lg border border-blue-200 bg-white px-3 py-2 focus:ring-2 focus:ring-blue-100" /> : ((values[answer.id] ?? answer).custom_values?.__rincian ?? answer.question?.pertanyaan ?? '')}</td>
+    <tbody>{rows.map(({ answer, no }) => answer.question?.question_title_override === CONCLUSION_MARKER ? <tr key={answer.id} className="border-t"><td colSpan={columns.length + 2} className="space-y-3 p-3"><p className="font-bold">{answer.question.pertanyaan}</p>{disabled || satkerMode ? <p className="whitespace-pre-wrap">{conclusionText(getAnswerValue(answer, values))}</p> : <><select aria-label="Kesimpulan penilaian akhir" className="w-full rounded-lg border p-2" value={(getAnswerValue(answer, values)).custom_values?.__kesimpulan ?? ''} onChange={(event) => { const row = getAnswerValue(answer, values); onChange(String(answer.id), { ...row, custom_values: { ...row.custom_values, __kesimpulan: event.target.value } }, '__kesimpulan', Number(answer.question_id)) }}><option value="">Pilih kesimpulan</option>{CONCLUSION_OPTIONS.map((option) => <option key={option}>{option}</option>)}</select>{(getAnswerValue(answer, values)).custom_values?.__kesimpulan === 'Lainnya' && <textarea aria-label="Catatan kesimpulan lainnya" placeholder="Isi catatan kesimpulan lainnya" className="w-full rounded-lg border p-2" rows={3} value={(getAnswerValue(answer, values)).custom_values?.__kesimpulan_catatan ?? ''} onChange={(event) => { const row = getAnswerValue(answer, values); onChange(String(answer.id), { ...row, custom_values: { ...row.custom_values, __kesimpulan_catatan: event.target.value } }, '__kesimpulan_catatan', Number(answer.question_id)) }} />}</>}</td></tr> : answer.question?.is_header ? <><tr key={`section-${answer.id}`} className="border-t bg-slate-100"><td colSpan={columns.length + 2} className="px-3 py-3 font-bold text-slate-800">{answer.question.pertanyaan}</td></tr><tr key={`section-columns-${answer.id}`} className="bg-gray-50 text-xs font-semibold text-slate-700"><th className="w-14 p-3">No</th><th className="w-[24rem] min-w-[220px] max-w-[40vw] p-3">{answer.question.question_title_override || ''}</th>{columns.map((column, index) => <th key={column.key} className="w-[12rem] min-w-[9rem] max-w-[15rem] whitespace-normal break-words p-3">{answer.question.column_titles?.[index] || ''}</th>)}</tr></> : <tr key={answer.id} className="border-t">
+      <td className="w-14 p-3 align-top">{no}</td><td className="w-[24rem] min-w-[220px] max-w-[40vw] p-3 align-top break-words">{answer.source_stage && <span className={`mb-1.5 block w-fit rounded-full px-2 py-0.5 text-[10px] font-semibold ${answer.source_stage === 1 ? 'bg-indigo-50 text-indigo-600' : 'bg-emerald-50 text-emerald-700'}`}>{satkerMode ? (answer.source_stage === 1 ? 'Dari Tahap 1' : 'Tambahan Tahap 2') : (answer.source_stage === 1 ? `Dari ${getReviewerStageName(1)}` : `Tambahan ${getReviewerStageName(2)}`)}</span>}{satkerMode && !disabled && (answer.question?.satker_lock_mode ?? 'NONE') === 'NONE' ? <input aria-label="Rincian" placeholder="Isi rincian…" value={(getAnswerValue(answer, values)).custom_values?.__rincian ?? answer.question?.pertanyaan ?? ''} onChange={(event) => { const row = getAnswerValue(answer, values); onChange(String(answer.id), { ...row, custom_values: { ...row.custom_values, __rincian: event.target.value } }, '__rincian', Number(answer.question_id)) }} className="w-full rounded-lg border border-blue-200 bg-white px-3 py-2 focus:ring-2 focus:ring-blue-100" /> : ((getAnswerValue(answer, values)).custom_values?.__rincian ?? answer.question?.pertanyaan ?? '')}</td>
       {columns.map((column) => {
         const rowDisabled = disabled || (satkerMode && answer.question?.satker_lock_mode === 'ROW')
         const columnDisabled = rowDisabled || (satkerMode
           ? column.owner === 'REVIEWER'
           : column.owner === 'SATKER')
-        const row = values[answer.id] ?? answer
+        const row = getAnswerValue(answer, values)
         const customValues = row.custom_values ?? {}
         const hasCustomValue = Object.prototype.hasOwnProperty.call(customValues, column.key)
         const legacyValue = column.key === 'jawaban_boolean' ? row.jawaban_boolean
@@ -105,7 +109,7 @@ export default function BAAnswerGrid({ answers, columns, values, disabled, onCha
         )
         const duplicateSupportLink = duplicateUrlCells.has(`${answer.id}:${column.key}`)
         const linkInTextColumn = textCellsWithLinks.has(`${answer.id}:${column.key}`)
-        const update = (next: string | boolean | number) => onChange(String(answer.id), { ...row, custom_values: { ...row.custom_values, [column.key]: next } })
+        const update = (next: string | boolean | number) => onChange(String(answer.id), { ...row, custom_values: { ...row.custom_values, [column.key]: next } }, column.key, Number(answer.question_id))
         const clickableUrl = getClickableUrl(value)
         let input
         if (columnDisabled && column.type === 'url') input = clickableUrl
