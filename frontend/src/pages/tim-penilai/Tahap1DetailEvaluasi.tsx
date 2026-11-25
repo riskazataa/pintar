@@ -2,13 +2,14 @@ import FinalSignatureForm from '../../components/FinalSignatureForm';
 import BAAnswerGrid from './BAAnswerGrid';
 import { getBAColumns } from '../../services/inovasi.service';
 import type { BAColumn } from '../../services/inovasi.service';
-import { useEffect, useState, useRef } from 'react';
+import { useCallback, useEffect, useState, useRef } from 'react';
 import SignatureCanvas from 'react-signature-canvas';
 import { useParams, useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import {
   getUsulanDetail,
-  savePenilaian,
+  savePenilaianCells,
+  type AssessmentCellChange,
   downloadHasilEvaluasiPdf,
   kembalikanUsulan,
   simpanTandaTangan
@@ -38,6 +39,19 @@ function formatDate(dateStr?: string) {
   });
 }
 
+interface PendingAssessmentCell extends AssessmentCellChange {
+  revision: number
+}
+
+function localAnswerValue(answer: any) {
+  return {
+    jawaban_boolean: answer.jawaban_boolean ?? false,
+    catatan_string: answer.catatan_string || '',
+    link: answer.link || '',
+    custom_values: answer.custom_values || {},
+  }
+}
+
 export default function Tahap1DetailEvaluasi({ tahap = 1, onUpdated }: { tahap?: number; onUpdated?: () => void }) {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
@@ -50,7 +64,13 @@ export default function Tahap1DetailEvaluasi({ tahap = 1, onUpdated }: { tahap?:
   const [localAnswers, setLocalAnswers] = useState<Record<string, any>>({});
   const [changed, setChanged] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [autosaveStatus, setAutosaveStatus] = useState<'saved' | 'pending' | 'saving' | 'error'>('saved');
   const [isEditing, setIsEditing] = useState(false);
+  const pendingCellsRef = useRef(new Map<string, PendingAssessmentCell>());
+  const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const savePromiseRef = useRef<Promise<void> | null>(null);
+  const saveSequenceRef = useRef(0);
+  const flushCellsRef = useRef<() => Promise<void>>(async () => undefined);
 
   // State Modal Perbaikan
   const [perbaikanModal, setPerbaikanModal] = useState(false);
@@ -68,15 +88,14 @@ export default function Tahap1DetailEvaluasi({ tahap = 1, onUpdated }: { tahap?:
   const initLocalAnswers = (assessmentAnswers: any[]) => {
     const init: Record<string, any> = {};
     assessmentAnswers.forEach((ans: any) => {
-      init[ans.id] = {
-        jawaban_boolean: ans.jawaban_boolean ?? false,
-        catatan_string: ans.catatan_string || '',
-        link: ans.link || '',
-        custom_values: ans.custom_values || {}
-      };
+      init[String(ans.question_id)] = localAnswerValue(ans);
     });
+    pendingCellsRef.current.clear();
+    if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+    saveTimerRef.current = null;
     setLocalAnswers(init);
     setChanged(false);
+    setAutosaveStatus('saved');
   };
 
   useEffect(() => {
@@ -95,47 +114,137 @@ export default function Tahap1DetailEvaluasi({ tahap = 1, onUpdated }: { tahap?:
       .finally(() => setLoading(false));
   }, [id, tahap]);
 
+  const flushPendingCellSaves = useCallback((): Promise<void> => {
+    if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+    saveTimerRef.current = null;
+    if (savePromiseRef.current) return savePromiseRef.current;
+    const pendingSnapshot = [...pendingCellsRef.current.entries()];
+    if (!id || pendingSnapshot.length === 0) {
+      setAutosaveStatus('saved');
+      setChanged(false);
+      return Promise.resolve();
+    }
+
+    setSaving(true);
+    setAutosaveStatus('saving');
+    const request = (async () => {
+      let failed = false;
+      try {
+        await savePenilaianCells(id, pendingSnapshot.map(([, cell]) => ({
+          question_id: cell.question_id,
+          column_key: cell.column_key,
+          value: cell.value,
+        })), tahap);
+        for (const [key, savedCell] of pendingSnapshot) {
+          if (pendingCellsRef.current.get(key)?.revision === savedCell.revision) pendingCellsRef.current.delete(key);
+        }
+        if (pendingCellsRef.current.size === 0) {
+          setChanged(false);
+          setAutosaveStatus('saved');
+        } else {
+          setAutosaveStatus('pending');
+        }
+      } catch (err: unknown) {
+        failed = true;
+        setAutosaveStatus('error');
+        notify(axios.isAxiosError(err) ? err.response?.data?.message || 'Autosave gagal. Periksa koneksi lalu coba simpan ulang.' : 'Autosave gagal. Periksa koneksi lalu coba simpan ulang.', 'error');
+      } finally {
+        savePromiseRef.current = null;
+        setSaving(false);
+        if (pendingCellsRef.current.size > 0 && !failed) {
+          saveTimerRef.current = setTimeout(() => { void flushCellsRef.current(); }, 180);
+        }
+      }
+    })();
+    savePromiseRef.current = request;
+    return request;
+  }, [id, tahap, notify]);
+
+  flushCellsRef.current = flushPendingCellSaves;
+
+  const scheduleCellSave = () => {
+    if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+    setAutosaveStatus('pending');
+    saveTimerRef.current = setTimeout(() => { void flushCellsRef.current(); }, 650);
+  };
+
+  const handleReviewerCellChange = (answerId: string, value: any, columnKey?: string, questionId?: number) => {
+    const stableQuestionId = questionId ?? Number(data?.assessment_answers?.find((answer: any) => String(answer.id) === answerId)?.question_id);
+    const answerKey = Number.isInteger(stableQuestionId) && stableQuestionId > 0 ? String(stableQuestionId) : answerId;
+    setLocalAnswers((previous) => ({ ...previous, [answerKey]: value }));
+    if (!columnKey || !Number.isInteger(stableQuestionId) || stableQuestionId <= 0) return;
+
+    const cellValue = value.custom_values?.[columnKey]
+      ?? (columnKey === 'jawaban_boolean' ? value.jawaban_boolean
+        : columnKey === 'catatan_string' ? value.catatan_string
+          : columnKey === 'link' ? value.link
+            : undefined);
+    if (cellValue === undefined || cellValue === null) return;
+    const key = `${stableQuestionId}:${columnKey}`;
+    pendingCellsRef.current.set(key, {
+      question_id: stableQuestionId,
+      column_key: columnKey,
+      value: cellValue,
+      revision: ++saveSequenceRef.current,
+    });
+    setChanged(true);
+    scheduleCellSave();
+  };
+
+  useEffect(() => {
+    if (!id) return;
+    let cancelled = false;
+    const refreshCollaborativeAnswers = async () => {
+      try {
+        const response = await getUsulanDetail(id, tahap);
+        if (cancelled) return;
+        const refreshed = response.data?.data || response.data;
+        const remoteAnswers = refreshed.assessment_answers ?? [];
+        setData(refreshed);
+        setLocalAnswers((previous) => {
+          const next = { ...previous };
+          for (const answer of remoteAnswers) {
+            const questionId = String(answer.question_id);
+            const row = localAnswerValue(answer);
+            for (const pending of pendingCellsRef.current.values()) {
+              if (String(pending.question_id) !== questionId) continue;
+              row.custom_values = { ...row.custom_values, [pending.column_key]: pending.value };
+              if (pending.column_key === 'jawaban_boolean') row.jawaban_boolean = pending.value;
+              if (pending.column_key === 'catatan_string') row.catatan_string = pending.value;
+              if (pending.column_key === 'link') row.link = pending.value;
+            }
+            next[questionId] = row;
+          }
+          return next;
+        });
+      } catch {
+        // Keep the current worksheet usable when a background refresh is temporarily unavailable.
+      }
+    };
+    const interval = setInterval(() => { void refreshCollaborativeAnswers(); }, 1800);
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+    };
+  }, [id, tahap]);
+
+  useEffect(() => () => {
+    if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+    if (!id || savePromiseRef.current || pendingCellsRef.current.size === 0) return;
+    const cells = [...pendingCellsRef.current.values()].map(({ question_id, column_key, value }) => ({ question_id, column_key, value }));
+    void savePenilaianCells(id, cells, tahap).catch(() => undefined);
+  }, [id, tahap]);
+
   useEffect(() => {
     const user = getUser();
     setCurrentUser(user);
   }, []);
 
-  const handleBatalEdit = () => {
-    if (data?.assessment_answers) initLocalAnswers(data.assessment_answers);
-    setIsEditing(false);
-  };
-
   const handleSimpan = async () => {
-    if (!id || !data?.assessment_answers) return;
-    setSaving(true);
-    try {
-      const answersPayload = data.assessment_answers.map((ans: any) => {
-        const local = localAnswers[ans.id];
-        return {
-
-          question_id: ans.question_id,
-          link: local?.link || '',
-          custom_values: local?.custom_values || {},
-          jawaban_boolean: local ? local.jawaban_boolean : ans.jawaban_boolean,
-          catatan_string: local ? local.catatan_string : (ans.catatan_string || ''),
-        };
-      });
-      await savePenilaian(id, answersPayload, tahap);
-
-      const response = await getUsulanDetail(id, tahap);
-      const refreshed = response.data?.data || response.data;
-      setData(refreshed);
-      onUpdated?.();
-      initLocalAnswers(refreshed.assessment_answers ?? []);
-
-      setChanged(false);
-      setIsEditing(false);
-      notify('Perubahan berhasil disimpan.', 'success');
-    } catch (err: unknown) {
-      notify(axios.isAxiosError(err) ? err.response?.data?.message || 'Gagal menyimpan perubahan' : 'Terjadi kesalahan', 'error');
-    } finally {
-      setSaving(false);
-    }
+    await flushPendingCellSaves();
+    if (pendingCellsRef.current.size > 0) return;
+    setIsEditing(false);
+    notify('Semua perubahan sudah tersimpan otomatis.', 'success');
   };
 
   const handleSimpanTandaTangan = async () => {
@@ -325,7 +434,12 @@ export default function Tahap1DetailEvaluasi({ tahap = 1, onUpdated }: { tahap?:
         <div className="space-y-6">
           <div className="rounded-2xl border border-gray-100 bg-white p-6 shadow-sm">
             <div className="flex items-center justify-between mb-4 border-b border-gray-100 pb-4">
-              <h3 className="text-lg font-bold text-gray-800">{getReviewerStageName(tahap)}</h3>
+              <div>
+                <h3 className="text-lg font-bold text-gray-800">{getReviewerStageName(tahap)}</h3>
+                <span role="status" aria-live="polite" className={`mt-1 inline-block text-xs ${autosaveStatus === 'error' ? 'font-semibold text-rose-600' : autosaveStatus === 'saving' || autosaveStatus === 'pending' ? 'text-amber-700' : 'text-emerald-700'}`}>
+                  {autosaveStatus === 'saving' ? 'Menyimpan perubahan…' : autosaveStatus === 'pending' ? 'Perubahan akan disimpan…' : autosaveStatus === 'error' ? 'Gagal menyimpan. Klik Simpan Ulang.' : 'Tersimpan otomatis · perubahan reviewer disinkronkan'}
+                </span>
+              </div>
               <span className="text-xs font-semibold text-gray-600 bg-gray-100 px-3 py-1.5 rounded-full">
                 Total {data.assessment_answers?.length || 0} Pertanyaan
               </span>
@@ -333,12 +447,12 @@ export default function Tahap1DetailEvaluasi({ tahap = 1, onUpdated }: { tahap?:
 
             {tahap === 2 && <div className="mb-4 rounded-xl border border-indigo-100 bg-indigo-50/60 p-4 text-sm leading-6 text-indigo-800">
               Pertanyaan dan jawaban dari hasil Seleksi Awal dibawa otomatis ke penilaian ini. Pertanyaan tambahan Penilaian Akhir ditampilkan setelahnya.
-              {data.requires_assessment_save && <span className="mt-1 block font-medium">Klik Edit Assessment, lengkapi penilaian, lalu simpan sebelum menandatangani.</span>}
+              {data.requires_assessment_save && <span className="mt-1 block font-medium">Isi kolom akan tersimpan otomatis. Tanda tangan aktif setelah semua jawaban tersimpan.</span>}
             </div>}
             <div className="space-y-4">
               {data.assessment_answers && data.assessment_answers.length > 0 ? (
                 <div className="w-full">
-                  <BAAnswerGrid questionTitle={questionTitle} answers={data.assessment_answers} columns={columns} values={localAnswers} disabled={!isEditing} onChange={(answerId, value) => { setLocalAnswers((prev) => ({ ...prev, [answerId]: value })); setChanged(true) }} />
+                  <BAAnswerGrid questionTitle={questionTitle} answers={data.assessment_answers} columns={columns} values={localAnswers} disabled={!isEditing} onChange={handleReviewerCellChange} />
                 </div>
               ) : (
                 <div className="flex flex-col items-center justify-center py-12 text-sm text-gray-400 bg-gray-50 rounded-xl border border-dashed border-gray-200">
@@ -366,21 +480,13 @@ export default function Tahap1DetailEvaluasi({ tahap = 1, onUpdated }: { tahap?:
                 Edit Assessment
               </button>
             ) : (
-              <>
-                <button
-                  onClick={handleBatalEdit}
-                  className="rounded-lg border border-gray-300 px-5 py-2.5 text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors"
-                >
-                  Batal
-                </button>
-                <button
-                  onClick={handleSimpan}
-                  disabled={saving || (tahap === 1 && !changed) || !data.assessment_answers?.length}
-                  className="rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed shadow-sm shadow-blue-200 transition-all"
-                >
-                  {saving ? 'Menyimpan...' : 'Simpan Perubahan'}
-                </button>
-              </>
+              <button
+                onClick={handleSimpan}
+                disabled={saving || !data.assessment_answers?.length}
+                className="rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed shadow-sm shadow-blue-200 transition-all"
+              >
+                {saving ? 'Menyimpan...' : autosaveStatus === 'error' ? 'Simpan Ulang' : 'Selesai Edit'}
+              </button>
             )}
 
             <div className="hidden sm:block w-px h-8 bg-gray-200 mx-1"></div>

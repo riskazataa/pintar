@@ -124,6 +124,15 @@ export const assignPenilaiBySatkerBulk = (satkerIds: number[], penilaiIds: numbe
 export const savePenilaian = (id: string | number, answers: any[], tahap = 1) =>
   api.patch(`/inovasi/${id}/assessment-penilai`, { answers }, { params: { tahap } })
 
+export interface AssessmentCellChange {
+  question_id: number
+  column_key: string
+  value: string | number | boolean
+}
+
+export const savePenilaianCells = (id: string | number, cells: AssessmentCellChange[], tahap = 1) =>
+  api.patch(`/inovasi/${id}/assessment-penilai/cells`, { cells }, { params: { tahap } })
+
 export const updateAssessmentAnswers = (id: string | number, data: { assessment_answers: any[] }) =>
   api.patch(`/inovasi/${id}/assessment`, data)
 

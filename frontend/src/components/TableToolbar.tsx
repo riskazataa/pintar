@@ -9,6 +9,8 @@ interface TableToolbarProps {
   sortOrder: TableSortOrder
   onSortOrderChange: (value: TableSortOrder) => void
   onClearFilters?: () => void
+  filtersOpen?: boolean
+  onFiltersOpenChange?: (open: boolean) => void
   children?: ReactNode
   actions?: ReactNode
 }
@@ -20,10 +22,18 @@ export default function TableToolbar({
   sortOrder,
   onSortOrderChange,
   onClearFilters,
+  filtersOpen,
+  onFiltersOpenChange,
   children,
   actions,
 }: TableToolbarProps) {
-  const [filtersOpen, setFiltersOpen] = useState(false)
+  const [internalFiltersOpen, setInternalFiltersOpen] = useState(false)
+  const isFiltersOpen = filtersOpen ?? internalFiltersOpen
+  const toggleFilters = () => {
+    const next = !isFiltersOpen
+    onFiltersOpenChange?.(next)
+    if (filtersOpen === undefined) setInternalFiltersOpen(next)
+  }
 
   return (
     <section className="rounded-xl border border-slate-200 bg-white p-2.5 shadow-sm">
@@ -44,9 +54,9 @@ export default function TableToolbar({
         </div>
         <button
           type="button"
-          onClick={() => setFiltersOpen((open) => !open)}
-          aria-expanded={filtersOpen}
-          className={`inline-flex h-9 items-center gap-2 rounded-md border px-3 text-sm font-medium transition ${filtersOpen ? 'border-violet-200 bg-violet-50 text-violet-700' : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50'}`}
+          onClick={toggleFilters}
+          aria-expanded={isFiltersOpen}
+          className={`inline-flex h-9 items-center gap-2 rounded-md border px-3 text-sm font-medium transition ${isFiltersOpen ? 'border-violet-200 bg-violet-50 text-violet-700' : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50'}`}
         >
           <svg aria-hidden="true" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth={1.8} viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" d="M4 6h16M7 12h10m-7 6h4" />
@@ -57,7 +67,7 @@ export default function TableToolbar({
         {actions}
       </div>
 
-      {filtersOpen && (
+      {isFiltersOpen && (
         <div className="mt-2.5 grid grid-cols-1 gap-2.5 border-t border-slate-100 pt-2.5 sm:grid-cols-2 lg:grid-cols-5">
           <label className="block text-xs font-medium text-slate-500">
             Urutkan tanggal
