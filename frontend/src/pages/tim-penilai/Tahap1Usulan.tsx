@@ -52,6 +52,19 @@ const STATUS_OPTIONS = [
 
 interface SatkerOption { id: string | number; nama_satker: string }
 
+interface ReviewerListState {
+  search: string
+  statusFilter: string
+  startDate: string
+  endDate: string
+  satkerFilter: string
+  page: number
+  limit: number
+  sortOrder: TableSortOrder
+  selectedYear: string
+  filtersOpen: boolean
+}
+
 // ─── Helpers ─────────────────────────────────────────
 function formatDate(dateStr?: string) {
   if (!dateStr) return '-'
@@ -62,9 +75,43 @@ function formatDate(dateStr?: string) {
   } catch { return dateStr }
 }
 
+function getReviewerListStateKey(mode: ReviewerPageMode, tahap: number) {
+  let reviewerId = 'anonymous'
+  try {
+    const user = JSON.parse(localStorage.getItem('user') || '{}')
+    if (user.id !== undefined && user.id !== null) reviewerId = String(user.id)
+  } catch { /* Use an isolated anonymous key if local user data is malformed. */ }
+  return `tim-penilai:list-state:${reviewerId}:${mode}:${tahap}`
+}
+
+function readReviewerListState(key: string): Partial<ReviewerListState> {
+  try {
+    const raw = sessionStorage.getItem(key)
+    if (!raw) return {}
+    const value = JSON.parse(raw) as Record<string, unknown>
+    const isDate = (date: unknown): date is string => typeof date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(date)
+    return {
+      search: typeof value.search === 'string' ? value.search : '',
+      statusFilter: typeof value.statusFilter === 'string' && STATUS_OPTIONS.some((option) => option.value === value.statusFilter) ? value.statusFilter : '',
+      startDate: isDate(value.startDate) ? value.startDate : '',
+      endDate: isDate(value.endDate) ? value.endDate : '',
+      satkerFilter: typeof value.satkerFilter === 'string' ? value.satkerFilter : '',
+      page: typeof value.page === 'number' && Number.isInteger(value.page) && value.page > 0 ? value.page : 1,
+      limit: typeof value.limit === 'number' && [0, 5, 10, 15].includes(value.limit) ? value.limit : 10,
+      sortOrder: value.sortOrder === 'asc' ? 'asc' : 'desc',
+      selectedYear: typeof value.selectedYear === 'string' && /^\d{4}$/.test(value.selectedYear) ? value.selectedYear : String(new Date().getFullYear()),
+      filtersOpen: value.filtersOpen === true,
+    }
+  } catch {
+    return {}
+  }
+}
+
 export default function Tahap1Usulan({ tahap = 1, mode = 'PENILAIAN' }: { tahap?: number; mode?: ReviewerPageMode }) {
   const navigate = useNavigate()
   const { notify } = useNotifications()
+  const listStateKey = getReviewerListStateKey(mode, tahap)
+  const [savedListState] = useState(() => readReviewerListState(listStateKey))
 
   const [data, setData] = useState<UsulanItem[]>([])
   const [satkerSummary, setSatkerSummary] = useState<SatkerSubmissionSummary[]>([])
@@ -72,27 +119,35 @@ export default function Tahap1Usulan({ tahap = 1, mode = 'PENILAIAN' }: { tahap?
   const [summaryExporting, setSummaryExporting] = useState(false)
   const [summaryError, setSummaryError] = useState('')
   const [summaryOpen, setSummaryOpen] = useState(false)
-  const [meta, setMeta] = useState<PaginationMeta>({ page: 1, limit: 10, total: 0, totalPages: 0 })
-  const [limit, setLimit] = useState(10)
+  const [meta, setMeta] = useState<PaginationMeta>({ page: savedListState.page ?? 1, limit: savedListState.limit ?? 10, total: 0, totalPages: 0 })
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
 
   // Filters
-  const [search, setSearch] = useState('')
-  const [statusFilter, setStatusFilter] = useState('')
-  const [startDate, setStartDate] = useState('')
-  const [endDate, setEndDate] = useState('')
-  const [satkerFilter, setSatkerFilter] = useState('')
+  const [search, setSearch] = useState(savedListState.search ?? '')
+  const [statusFilter, setStatusFilter] = useState(savedListState.statusFilter ?? '')
+  const [startDate, setStartDate] = useState(savedListState.startDate ?? '')
+  const [endDate, setEndDate] = useState(savedListState.endDate ?? '')
+  const [satkerFilter, setSatkerFilter] = useState(savedListState.satkerFilter ?? '')
   const [satkerOptions, setSatkerOptions] = useState<SatkerOption[]>([])
-  const [page, setPage] = useState(1)
-  const [sortOrder, setSortOrder] = useState<TableSortOrder>('desc')
-  const [selectedYear, setSelectedYear] = useState(() => String(new Date().getFullYear()))
+  const [page, setPage] = useState(savedListState.page ?? 1)
+  const [limit, setLimit] = useState(savedListState.limit ?? 10)
+  const [sortOrder, setSortOrder] = useState<TableSortOrder>(savedListState.sortOrder ?? 'desc')
+  const [selectedYear, setSelectedYear] = useState(savedListState.selectedYear ?? String(new Date().getFullYear()))
+  const [filtersOpen, setFiltersOpen] = useState(savedListState.filtersOpen ?? false)
   const [reviewers, setReviewers] = useState<ReviewerOption[]>([])
   const [assignmentTarget, setAssignmentTarget] = useState<UsulanItem | null>(null)
   const [assignmentStage, setAssignmentStage] = useState<1 | 2>(1)
   const [selectedReviewers, setSelectedReviewers] = useState<Set<string>>(new Set())
   const [assignmentSaving, setAssignmentSaving] = useState(false)
   const [assignmentError, setAssignmentError] = useState('')
+
+  useEffect(() => {
+    try {
+      const state: ReviewerListState = { search, statusFilter, startDate, endDate, satkerFilter, page, limit, sortOrder, selectedYear, filtersOpen }
+      sessionStorage.setItem(listStateKey, JSON.stringify(state))
+    } catch { /* Keep filtering usable if session storage is unavailable. */ }
+  }, [listStateKey, search, statusFilter, startDate, endDate, satkerFilter, page, limit, sortOrder, selectedYear, filtersOpen])
 
   const fetchList = useCallback(async () => {
     if (!selectedYear) {
@@ -335,7 +390,7 @@ export default function Tahap1Usulan({ tahap = 1, mode = 'PENILAIAN' }: { tahap?
       <YearSelect value={selectedYear} placeholder="Pilih tahun" onChange={(year) => { setData([]); setLoading(Boolean(year)); setSelectedYear(year); setPage(1) }} />
 
       {selectedYear ? <>
-      <TableToolbar search={search} onSearchChange={(value) => { setSearch(value); setPage(1) }} searchPlaceholder="Cari inovasi, unit, PIC, atau tahun..." sortOrder={sortOrder} onSortOrderChange={(value) => { setSortOrder(value); setPage(1) }} actions={mode === 'INOVASI' ? <>
+      <TableToolbar search={search} onSearchChange={(value) => { setSearch(value); setPage(1) }} searchPlaceholder="Cari inovasi, unit, PIC, atau tahun..." sortOrder={sortOrder} onSortOrderChange={(value) => { setSortOrder(value); setPage(1) }} filtersOpen={filtersOpen} onFiltersOpenChange={setFiltersOpen} actions={mode === 'INOVASI' ? <>
         <button type="button" onClick={() => setSummaryOpen(true)} className="inline-flex h-9 items-center gap-2 rounded-md bg-gradient-to-r from-teal-600 to-cyan-600 px-3 text-sm font-semibold text-white shadow-sm shadow-teal-200 transition hover:from-teal-700 hover:to-cyan-700 focus:outline-none focus:ring-2 focus:ring-teal-300 focus:ring-offset-2">
           <svg aria-hidden="true" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth={1.8} viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M4 19.5V14m5 5.5V9m5 10.5V4m5 15.5v-8" /><path strokeLinecap="round" strokeLinejoin="round" d="M2.5 20.5h19" /></svg>
           Rekap Satker
