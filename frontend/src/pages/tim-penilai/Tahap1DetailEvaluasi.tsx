@@ -43,6 +43,11 @@ interface PendingAssessmentCell extends AssessmentCellChange {
   revision: number
 }
 
+function getPendingAssessmentStorageKey(id?: string, tahap?: number, userId?: string | number | null) {
+  if (!id || userId === undefined || userId === null || userId === '') return null;
+  return `siapin:pending-assessment:v1:${userId}:${tahap ?? 1}:${id}`;
+}
+
 function localAnswerValue(answer: any) {
   return {
     jawaban_boolean: answer.jawaban_boolean ?? false,
@@ -70,6 +75,8 @@ export default function Tahap1DetailEvaluasi({ tahap = 1, onUpdated }: { tahap?:
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const savePromiseRef = useRef<Promise<void> | null>(null);
   const saveSequenceRef = useRef(0);
+  const retryAttemptRef = useRef(0);
+  const autosaveErrorNotifiedRef = useRef(false);
   const flushCellsRef = useRef<() => Promise<void>>(async () => undefined);
 
   // State Modal Perbaikan
@@ -85,6 +92,18 @@ export default function Tahap1DetailEvaluasi({ tahap = 1, onUpdated }: { tahap?:
   const sigPad = useRef<SignatureCanvas>(null);
   const [currentUser, setCurrentUser] = useState<any>(null);
 
+  const pendingStorageKey = getPendingAssessmentStorageKey(id, tahap, currentUser?.id ?? getUser()?.id);
+  const persistPendingCells = useCallback(() => {
+    if (!pendingStorageKey) return;
+    try {
+      const cells = [...pendingCellsRef.current.entries()].map(([key, cell]) => ({ key, ...cell }));
+      if (cells.length) sessionStorage.setItem(pendingStorageKey, JSON.stringify(cells));
+      else sessionStorage.removeItem(pendingStorageKey);
+    } catch {
+      // Keep editing even when browser storage is unavailable; the server autosave still runs.
+    }
+  }, [pendingStorageKey]);
+
   const initLocalAnswers = (assessmentAnswers: any[]) => {
     const init: Record<string, any> = {};
     assessmentAnswers.forEach((ans: any) => {
@@ -98,6 +117,49 @@ export default function Tahap1DetailEvaluasi({ tahap = 1, onUpdated }: { tahap?:
     setAutosaveStatus('saved');
   };
 
+  const restorePendingCells = (assessmentAnswers: any[]) => {
+    if (!pendingStorageKey) return;
+    try {
+      const serialized = sessionStorage.getItem(pendingStorageKey);
+      if (!serialized) return;
+      const restored = JSON.parse(serialized);
+      if (!Array.isArray(restored)) throw new Error('Invalid pending assessment data');
+
+      const answersByQuestion = new Map<string, any>();
+      assessmentAnswers.forEach((answer: any) => answersByQuestion.set(String(answer.question_id), localAnswerValue(answer)));
+      const pending = new Map<string, PendingAssessmentCell>();
+      for (const cell of restored) {
+        if (!Number.isInteger(cell?.question_id) || cell.question_id <= 0 || typeof cell?.column_key !== 'string') continue;
+        if (!['string', 'number', 'boolean'].includes(typeof cell.value)) continue;
+        const key = `${cell.question_id}:${cell.column_key}`;
+        const revision = Number.isInteger(cell.revision) ? cell.revision : ++saveSequenceRef.current;
+        pending.set(key, { question_id: cell.question_id, column_key: cell.column_key, value: cell.value, revision });
+        saveSequenceRef.current = Math.max(saveSequenceRef.current, revision);
+      }
+
+      for (const cell of pending.values()) {
+        const answer = answersByQuestion.get(String(cell.question_id));
+        if (!answer) continue;
+        answer.custom_values = { ...answer.custom_values, [cell.column_key]: cell.value };
+        if (cell.column_key === 'jawaban_boolean') answer.jawaban_boolean = cell.value;
+        if (cell.column_key === 'catatan_string') answer.catatan_string = cell.value;
+        if (cell.column_key === 'link') answer.link = cell.value;
+      }
+
+      pendingCellsRef.current = pending;
+      setLocalAnswers(Object.fromEntries(answersByQuestion));
+      setChanged(pending.size > 0);
+      setAutosaveStatus(pending.size > 0 ? 'pending' : 'saved');
+      if (pending.size > 0) {
+        saveTimerRef.current = setTimeout(() => { void flushCellsRef.current(); }, 250);
+      } else {
+        sessionStorage.removeItem(pendingStorageKey);
+      }
+    } catch {
+      try { sessionStorage.removeItem(pendingStorageKey); } catch { /* storage may be unavailable */ }
+    }
+  };
+
   useEffect(() => {
     if (!id) return;
     setLoading(true);
@@ -108,7 +170,10 @@ export default function Tahap1DetailEvaluasi({ tahap = 1, onUpdated }: { tahap?:
         setQuestionTitle(cols.data.questionTitle || 'Kriteria Penilaian');
         const detail = res.data?.data || res.data;
         setData(detail);
-        if (detail?.assessment_answers) initLocalAnswers(detail.assessment_answers);
+        if (detail?.assessment_answers) {
+          initLocalAnswers(detail.assessment_answers);
+          restorePendingCells(detail.assessment_answers);
+        }
       })
       .catch(() => notify('Gagal memuat detail usulan.', 'error'))
       .finally(() => setLoading(false));
@@ -129,6 +194,7 @@ export default function Tahap1DetailEvaluasi({ tahap = 1, onUpdated }: { tahap?:
     setAutosaveStatus('saving');
     const request = (async () => {
       let failed = false;
+      let shouldRetry = false;
       try {
         await savePenilaianCells(id, pendingSnapshot.map(([, cell]) => ({
           question_id: cell.question_id,
@@ -138,27 +204,39 @@ export default function Tahap1DetailEvaluasi({ tahap = 1, onUpdated }: { tahap?:
         for (const [key, savedCell] of pendingSnapshot) {
           if (pendingCellsRef.current.get(key)?.revision === savedCell.revision) pendingCellsRef.current.delete(key);
         }
+        persistPendingCells();
         if (pendingCellsRef.current.size === 0) {
           setChanged(false);
           setAutosaveStatus('saved');
         } else {
           setAutosaveStatus('pending');
         }
+        retryAttemptRef.current = 0;
+        autosaveErrorNotifiedRef.current = false;
       } catch (err: unknown) {
         failed = true;
         setAutosaveStatus('error');
-        notify(axios.isAxiosError(err) ? err.response?.data?.message || 'Autosave gagal. Periksa koneksi lalu coba simpan ulang.' : 'Autosave gagal. Periksa koneksi lalu coba simpan ulang.', 'error');
+        const status = axios.isAxiosError(err) ? err.response?.status : undefined;
+        shouldRetry = status === undefined || status === 408 || status === 429 || status >= 500;
+        if (!autosaveErrorNotifiedRef.current) {
+          notify(axios.isAxiosError(err) ? err.response?.data?.message || 'Autosave gagal. Perubahan masih tersimpan sementara di tab dan akan dicoba ulang.' : 'Autosave gagal. Perubahan masih tersimpan sementara di tab dan akan dicoba ulang.', 'error');
+          autosaveErrorNotifiedRef.current = true;
+        }
       } finally {
         savePromiseRef.current = null;
         setSaving(false);
         if (pendingCellsRef.current.size > 0 && !failed) {
           saveTimerRef.current = setTimeout(() => { void flushCellsRef.current(); }, 180);
+        } else if (pendingCellsRef.current.size > 0 && shouldRetry) {
+          const delay = Math.min(1000 * (2 ** retryAttemptRef.current), 15000);
+          retryAttemptRef.current = Math.min(retryAttemptRef.current + 1, 4);
+          saveTimerRef.current = setTimeout(() => { void flushCellsRef.current(); }, delay);
         }
       }
     })();
     savePromiseRef.current = request;
     return request;
-  }, [id, tahap, notify]);
+  }, [id, tahap, notify, persistPendingCells]);
 
   flushCellsRef.current = flushPendingCellSaves;
 
@@ -187,6 +265,7 @@ export default function Tahap1DetailEvaluasi({ tahap = 1, onUpdated }: { tahap?:
       value: cellValue,
       revision: ++saveSequenceRef.current,
     });
+    persistPendingCells();
     setChanged(true);
     scheduleCellSave();
   };
@@ -230,9 +309,6 @@ export default function Tahap1DetailEvaluasi({ tahap = 1, onUpdated }: { tahap?:
 
   useEffect(() => () => {
     if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
-    if (!id || savePromiseRef.current || pendingCellsRef.current.size === 0) return;
-    const cells = [...pendingCellsRef.current.values()].map(({ question_id, column_key, value }) => ({ question_id, column_key, value }));
-    void savePenilaianCells(id, cells, tahap).catch(() => undefined);
   }, [id, tahap]);
 
   useEffect(() => {
@@ -437,7 +513,7 @@ export default function Tahap1DetailEvaluasi({ tahap = 1, onUpdated }: { tahap?:
               <div>
                 <h3 className="text-lg font-bold text-gray-800">{getReviewerStageName(tahap)}</h3>
                 <span role="status" aria-live="polite" className={`mt-1 inline-block text-xs ${autosaveStatus === 'error' ? 'font-semibold text-rose-600' : autosaveStatus === 'saving' || autosaveStatus === 'pending' ? 'text-amber-700' : 'text-emerald-700'}`}>
-                  {autosaveStatus === 'saving' ? 'Menyimpan perubahan…' : autosaveStatus === 'pending' ? 'Perubahan akan disimpan…' : autosaveStatus === 'error' ? 'Gagal menyimpan. Klik Simpan Ulang.' : 'Tersimpan otomatis · perubahan reviewer disinkronkan'}
+                  {autosaveStatus === 'saving' ? 'Menyimpan perubahan…' : autosaveStatus === 'pending' ? 'Perubahan akan disimpan…' : autosaveStatus === 'error' ? 'Gagal menyimpan. Perubahan tersimpan sementara di tab; klik Simpan Ulang.' : 'Tersimpan otomatis · perubahan reviewer disinkronkan'}
                 </span>
               </div>
               <span className="text-xs font-semibold text-gray-600 bg-gray-100 px-3 py-1.5 rounded-full">
