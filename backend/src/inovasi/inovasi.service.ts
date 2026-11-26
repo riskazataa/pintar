@@ -62,7 +62,7 @@ export class InovasiService {
       },
       assessment_answers: {
         include: {
-          question: { select: { id: true, pertanyaan: true, is_header: true, satker_lock_mode: true, question_title_override: true, column_titles: true, parent_id: true, tahap: true, urutan: true } },
+          question: { select: { id: true, pertanyaan: true, is_header: true, is_active: true, tahap2_hidden: true, satker_lock_mode: true, question_title_override: true, column_titles: true, parent_id: true, tahap: true, urutan: true } },
         },
       },
     } satisfies Prisma.InovasiInclude;
@@ -233,11 +233,15 @@ export class InovasiService {
   }
 
   private async getStage1Answers(answers: any[], includeReviewer: boolean) {
-    const satkerAnswers = answers.filter((answer) => answer.tahap === 1 && (answer.source ?? 'SATKER') === 'SATKER');
+    const satkerAnswers = answers.filter((answer) => answer.tahap === 1
+      && (answer.source ?? 'SATKER') === 'SATKER'
+      && answer.question?.is_active !== false);
     const { columns } = await loadTemplateConfig(this.prisma, 1);
     if (!includeReviewer) return this.filterAnswersByOwner(satkerAnswers, columns, 'SATKER');
 
-    const reviewerAnswers = answers.filter((answer) => answer.tahap === 1 && answer.source === 'PENILAI');
+    const reviewerAnswers = answers.filter((answer) => answer.tahap === 1
+      && answer.source === 'PENILAI'
+      && answer.question?.is_active !== false);
     const reviewerByQuestion = new Map<number, any>();
     reviewerAnswers.forEach((answer) => reviewerByQuestion.set(answer.question_id, answer));
     const satkerQuestionIds = new Set(satkerAnswers.map((answer) => answer.question_id));
@@ -370,7 +374,10 @@ export class InovasiService {
     if (tahap === 2) {
       if (inovasi.status !== StatusInovasi.SELESAI_EVALUASI) throw new BadRequestException('Tahap 1 belum selesai');
       const signatures = inovasi.usulan_signatures.filter((s) => s.tahap === 2);
-      const saved = inovasi.assessment_answers.filter((a) => a.tahap === 2 && a.source === 'PENILAI');
+      const saved = inovasi.assessment_answers.filter((a) => a.tahap === 2
+        && a.source === 'PENILAI'
+        && a.question?.is_active !== false
+        && !(a.question?.tahap === 1 && a.question?.tahap2_hidden));
       const questions = signatures.length
         ? saved.filter((answer) => answer.question.tahap === 2).map((answer) => answer.question)
         : await this.prisma.assessmentQuestion.findMany({ where: { tahap: 2, is_active: true }, orderBy: [{ urutan: 'asc' }, { id: 'asc' }] });
@@ -487,7 +494,10 @@ export class InovasiService {
 
   private async getStage2QuestionIds(inovasiId: number, db: Prisma.TransactionClient = this.prisma) {
     const [source, additions] = await Promise.all([
-      db.assessmentAnswer.findMany({ where: { inovasi_id: inovasiId, tahap: 1 }, select: { question_id: true } }),
+      db.assessmentAnswer.findMany({
+        where: { inovasi_id: inovasiId, tahap: 1, question: { is_active: true, tahap2_hidden: false } },
+        select: { question_id: true },
+      }),
       db.assessmentQuestion.findMany({ where: { tahap: 2, is_active: true }, select: { id: true } }),
     ]);
     return [...new Set([...source.map((answer) => answer.question_id), ...additions.map((question) => question.id)])];
@@ -1342,18 +1352,25 @@ export class InovasiService {
     const questionIds = [...new Set(dto.cells.map((cell) => cell.question_id))];
     const questions = await this.prisma.assessmentQuestion.findMany({
       where: { id: { in: questionIds } },
-      select: { id: true, is_header: true, question_title_override: true },
+      select: { id: true, tahap: true, is_active: true, tahap2_hidden: true, is_header: true, question_title_override: true },
     });
     const questionById = new Map(questions.map((question) => [question.id, question]));
     const cellKeys = new Set<string>();
+    const cellsToSave: UpdateAssessmentCellsDto['cells'] = [];
+    let skippedInactiveCells = 0;
 
     for (const cell of dto.cells) {
       const key = `${cell.question_id}:${cell.column_key}`;
       if (cellKeys.has(key)) throw new BadRequestException('Sel yang sama hanya boleh dikirim sekali dalam satu penyimpanan.');
       cellKeys.add(key);
-      if (!allowedQuestionIds.has(cell.question_id)) throw new BadRequestException('Pertanyaan tidak sesuai tahap');
       const question = questionById.get(cell.question_id);
-      if (!question || question.is_header) throw new BadRequestException('Baris header tidak dapat diubah');
+      if (!question) throw new BadRequestException('Pertanyaan tidak ditemukan');
+      if (question.is_active === false || (tahap === 2 && question.tahap === 1 && question.tahap2_hidden)) {
+        skippedInactiveCells += 1;
+        continue;
+      }
+      if (!allowedQuestionIds.has(cell.question_id)) throw new BadRequestException('Pertanyaan tidak sesuai tahap');
+      if (question.is_header) throw new BadRequestException('Baris header tidak dapat diubah');
       if (!['string', 'number', 'boolean'].includes(typeof cell.value)) throw new BadRequestException('Nilai kolom tidak valid');
 
       if (cell.column_key === '__kesimpulan' || cell.column_key === '__kesimpulan_catatan') {
@@ -1367,6 +1384,7 @@ export class InovasiService {
           'Diterima sebagai inovasi percontohan nasional nilai 1',
           'Lainnya',
         ].includes(cell.value)) throw new BadRequestException('Pilih kesimpulan yang tersedia');
+        cellsToSave.push(cell);
         continue;
       }
 
@@ -1396,6 +1414,11 @@ export class InovasiService {
       if (['text', 'textarea', 'url', 'date'].includes(column.type) && typeof cell.value !== 'string') {
         throw new BadRequestException(`Kolom ${column.title} harus berupa teks`);
       }
+      cellsToSave.push(cell);
+    }
+
+    if (!cellsToSave.length) {
+      return { message: 'Baris yang sudah dihapus dilewati; tidak ada perubahan aktif untuk disimpan.', updated_cells: 0, skipped_inactive_cells: skippedInactiveCells };
     }
 
     await this.prisma.$transaction(async (tx) => {
@@ -1416,7 +1439,7 @@ export class InovasiService {
         throw new ForbiddenException('Penilaian sudah ditandatangani');
       }
 
-      for (const cell of dto.cells) {
+      for (const cell of cellsToSave) {
         const existing = await tx.assessmentAnswer.findFirst({
           where: { inovasi_id: inovasiId, question_id: cell.question_id, tahap, source: 'PENILAI' },
         });
@@ -1450,7 +1473,13 @@ export class InovasiService {
       }
     });
 
-    return { message: 'Perubahan kolom berhasil tersimpan', updated_cells: dto.cells.length };
+    return {
+      message: skippedInactiveCells
+        ? 'Perubahan tersimpan; baris yang sudah dihapus dilewati.'
+        : 'Perubahan kolom berhasil tersimpan',
+      updated_cells: cellsToSave.length,
+      skipped_inactive_cells: skippedInactiveCells,
+    };
   }
 
   async updateAssessmentByPenilai(
