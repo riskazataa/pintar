@@ -48,6 +48,11 @@ function getPendingAssessmentStorageKey(id?: string, tahap?: number, userId?: st
   return `siapin:pending-assessment:v1:${userId}:${tahap ?? 1}:${id}`;
 }
 
+const TAHAP_AWAL_SIGNER_ROLES = [
+  'SKI',
+  'Timker Manajemen Risiko, Reformasi Birokrasi dan Monev',
+];
+
 function localAnswerValue(answer: any) {
   return {
     jawaban_boolean: answer.jawaban_boolean ?? false,
@@ -196,11 +201,22 @@ export default function Tahap1DetailEvaluasi({ tahap = 1, onUpdated }: { tahap?:
       let failed = false;
       let shouldRetry = false;
       try {
-        await savePenilaianCells(id, pendingSnapshot.map(([, cell]) => ({
+        const response = await savePenilaianCells(id, pendingSnapshot.map(([, cell]) => ({
           question_id: cell.question_id,
           column_key: cell.column_key,
           value: cell.value,
         })), tahap);
+        if (Number(response.data?.invalidated_signatures ?? 0) > 0) {
+          setData((current: any) => current ? {
+            ...current,
+            signatures: [],
+            usulan_signatures: [],
+            status: 'PENDING',
+            ...(tahap === 2 ? { status_tahap2: 'PENDING' } : {}),
+          } : current);
+          onUpdated?.();
+          notify('Perubahan tersimpan. Tanda tangan tahap ini dibatalkan; tim reviewer perlu menandatangani ulang.', 'warning');
+        }
         for (const [key, savedCell] of pendingSnapshot) {
           if (pendingCellsRef.current.get(key)?.revision === savedCell.revision) pendingCellsRef.current.delete(key);
         }
@@ -236,7 +252,7 @@ export default function Tahap1DetailEvaluasi({ tahap = 1, onUpdated }: { tahap?:
     })();
     savePromiseRef.current = request;
     return request;
-  }, [id, tahap, notify, persistPendingCells]);
+  }, [id, tahap, notify, persistPendingCells, onUpdated]);
 
   flushCellsRef.current = flushPendingCellSaves;
 
@@ -367,8 +383,14 @@ export default function Tahap1DetailEvaluasi({ tahap = 1, onUpdated }: { tahap?:
       await kembalikanUsulan(id, alasanPerbaikan.trim());
       notify('Usulan dikembalikan untuk perbaikan.', 'success');
       navigate(`/tim-penilai/penilaian/${id}`);
-    } catch (err) {
-      notify('Gagal mengembalikan usulan.', 'error');
+    } catch (err: unknown) {
+      const apiMessage = axios.isAxiosError(err) ? err.response?.data?.message : null;
+      const message = Array.isArray(apiMessage)
+        ? apiMessage.join(' ')
+        : typeof apiMessage === 'string'
+          ? apiMessage
+          : 'Gagal mengembalikan usulan. Periksa koneksi backend lalu coba lagi.';
+      notify(message, 'error');
     } finally {
       setSubmittingPerbaikan(false);
       setPerbaikanModal(false);
@@ -547,7 +569,7 @@ export default function Tahap1DetailEvaluasi({ tahap = 1, onUpdated }: { tahap?:
                 onClick={() => {
                   if (!data.assigned_users?.length) { notify('Belum ada tim penilai yang ditugaskan untuk inovasi ini.', 'warning'); return }
                   if (!data.assigned_users.some((u: any) => String(u.id) === String(currentUser?.id))) { notify('Akun Anda belum ditugaskan sebagai penilai untuk inovasi ini.', 'warning'); return }
-                  if (data.signatures?.length > 0) { notify('Assessment tidak dapat diedit setelah ada tanda tangan.', 'warning'); return }
+                  if (data.signatures?.length > 0) notify('BA tetap dapat diedit. Tanda tangan tahap ini akan dibatalkan dan tim reviewer perlu menandatangani ulang.', 'warning')
                   setIsEditing(true)
                 }}
                 disabled={saving}
@@ -669,15 +691,27 @@ export default function Tahap1DetailEvaluasi({ tahap = 1, onUpdated }: { tahap?:
               </label>
               <label className="block min-w-0 text-sm font-medium text-gray-700">
                 Sebagai / Peran <span className="text-rose-500">*</span>
-                <input
-                  type="text"
-                  aria-label="Sebagai / Peran penanda tangan"
-                  placeholder="Contoh: SKI atau Timker Manajemen Risiko"
-                  value={jabatanTtd}
-                  onChange={e => setJabatanTtd(e.target.value)}
-                  maxLength={120}
-                  className="mt-1.5 h-11 w-full rounded-xl border border-gray-300 bg-white px-3.5 text-sm font-normal text-gray-800 outline-none transition placeholder:text-gray-400 focus:border-blue-500 focus:ring-4 focus:ring-blue-50"
-                />
+                {tahap === 1 ? (
+                  <select
+                    aria-label="Sebagai / Peran penanda tangan"
+                    value={jabatanTtd}
+                    onChange={e => setJabatanTtd(e.target.value)}
+                    className="mt-1.5 h-11 w-full rounded-xl border border-gray-300 bg-white px-3.5 text-sm font-normal text-gray-800 outline-none transition focus:border-blue-500 focus:ring-4 focus:ring-blue-50"
+                  >
+                    <option value="">Pilih peran</option>
+                    {TAHAP_AWAL_SIGNER_ROLES.map(role => <option key={role} value={role}>{role}</option>)}
+                  </select>
+                ) : (
+                  <input
+                    type="text"
+                    aria-label="Sebagai / Peran penanda tangan"
+                    placeholder="Masukkan peran penanda tangan"
+                    value={jabatanTtd}
+                    onChange={e => setJabatanTtd(e.target.value)}
+                    maxLength={120}
+                    className="mt-1.5 h-11 w-full rounded-xl border border-gray-300 bg-white px-3.5 text-sm font-normal text-gray-800 outline-none transition placeholder:text-gray-400 focus:border-blue-500 focus:ring-4 focus:ring-blue-50"
+                  />
+                )}
               </label>
               <label className="block min-w-0 text-sm font-medium text-gray-700">
                 NIP <span className="text-rose-500">*</span>

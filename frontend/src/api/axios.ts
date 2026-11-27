@@ -9,12 +9,6 @@ const api = axios.create({
 
 let redirectingToLogin = false
 
-function getResponseMessage(data: unknown) {
-  if (!data || typeof data !== 'object' || !('message' in data)) return ''
-  const message = (data as { message?: unknown }).message
-  return Array.isArray(message) ? message.join(' ') : String(message ?? '')
-}
-
 function isPublicAuthRequest(url = '') {
   return /\/auth\/(login|forgot-password|reset-password)(?:\?|$)/i.test(url)
 }
@@ -40,11 +34,11 @@ api.interceptors.response.use(
   (error: unknown) => {
     if (axios.isAxiosError(error) && error.response?.status === 401) {
       const requestUrl = error.config?.url ?? ''
-      const message = getResponseMessage(error.response.data)
-      const isInvalidSessionToken = /token\s+(tidak valid|tidak ditemukan)|invalid token|jwt expired|token expired/i.test(message)
       const hasSession = Boolean(localStorage.getItem('token') || localStorage.getItem('user'))
 
-      if (hasSession && !isPublicAuthRequest(requestUrl) && isInvalidSessionToken) {
+      // Nest commonly returns a plain "Unauthorized" for expired/invalid JWTs,
+      // so do not depend on the response message mentioning a token.
+      if (hasSession && !isPublicAuthRequest(requestUrl)) {
         clearExpiredSession()
       }
     }

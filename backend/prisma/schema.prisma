@@ -190,6 +190,7 @@ model AssessmentTemplatePackage {
 model UsulinSignature {
   keputusan   String?
   tahap Int @default(1)
+  invalidated_at DateTime?
   id          Int       @id @default(autoincrement())
   usulan_id   Int
   user_id     Int
@@ -202,4 +203,6 @@ model UsulinSignature {
 
   usulan      Inovasi   @relation(fields: [usulan_id], references: [id], onDelete: Cascade)
   user        User      @relation(fields: [user_id], references: [id])
+
+  @@index([usulan_id, tahap, invalidated_at])
 }

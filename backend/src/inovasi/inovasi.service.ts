@@ -56,6 +56,7 @@ export class InovasiService {
       penilai: { select: { id: true, nama_lengkap: true } },
       penilai_tahap2: { select: { id: true, nama_lengkap: true } },
       usulan_signatures: {
+        where: { invalidated_at: null },
         include: {
           user: { select: { id: true, nama_lengkap: true } },
         },
@@ -184,7 +185,7 @@ export class InovasiService {
           status_tahap2: true,
           penilai: { select: { id: true } },
           penilai_tahap2: { select: { id: true } },
-          usulan_signatures: { select: { user_id: true, tahap: true, keputusan: true } },
+          usulan_signatures: { where: { invalidated_at: null }, select: { user_id: true, tahap: true, keputusan: true, invalidated_at: true } },
         },
         orderBy: { created_at: sortOrder },
       });
@@ -529,7 +530,7 @@ export class InovasiService {
       );
       const requestedReviewerIds = new Set(penilaiIds);
       const signatures = await tx.usulinSignature.findMany({
-        where: { usulan_id: inovasiId, tahap },
+        where: { usulan_id: inovasiId, tahap, invalidated_at: null },
         select: { user_id: true },
       });
       if (signatures.length) {
@@ -569,7 +570,7 @@ export class InovasiService {
             penilai: { select: { id: true } },
             penilai_tahap2: { select: { id: true } },
             usulan_signatures: {
-              where: { tahap },
+              where: { tahap, invalidated_at: null },
               select: { user_id: true },
             },
           },
@@ -639,7 +640,7 @@ export class InovasiService {
           id: true,
           penilai: { select: { id: true } },
           penilai_tahap2: { select: { id: true } },
-          usulan_signatures: { where: { tahap }, select: { user_id: true } },
+          usulan_signatures: { where: { tahap, invalidated_at: null }, select: { user_id: true } },
         },
       });
       if (proposals.length !== inovasiIds.length) {
@@ -704,7 +705,7 @@ export class InovasiService {
           },
           select: {
             id: true,
-            usulan_signatures: { where: { tahap }, select: { user_id: true } },
+            usulan_signatures: { where: { tahap, invalidated_at: null }, select: { user_id: true } },
           },
         }),
         tx.user.findMany({
@@ -1338,10 +1339,6 @@ export class InovasiService {
     if (tahap === 2 && inovasi.status !== StatusInovasi.SELESAI_EVALUASI) {
       throw new BadRequestException('Tahap 1 belum selesai');
     }
-    if (await this.prisma.usulinSignature.count({ where: { usulan_id: inovasiId, tahap } })) {
-      throw new ForbiddenException('Penilaian sudah ditandatangani');
-    }
-
     const { columns } = await loadTemplateConfig(this.prisma, tahap);
     const allowedQuestionIds = new Set(tahap === 2
       ? await this.getStage2QuestionIds(inovasiId)
@@ -1421,6 +1418,7 @@ export class InovasiService {
       return { message: 'Baris yang sudah dihapus dilewati; tidak ada perubahan aktif untuk disimpan.', updated_cells: 0, skipped_inactive_cells: skippedInactiveCells };
     }
 
+    let invalidatedSignatures = 0;
     await this.prisma.$transaction(async (tx) => {
       await tx.$queryRaw`SELECT id FROM "Inovasi" WHERE id = ${inovasiId} FOR UPDATE`;
       const latest = await tx.inovasi.findUnique({
@@ -1435,10 +1433,6 @@ export class InovasiService {
         throw new ForbiddenException('Usulan sedang menunggu perbaikan Satker. Reviewer belum dapat mengedit penilaian.');
       }
       if (tahap === 2 && latest.status !== StatusInovasi.SELESAI_EVALUASI) throw new BadRequestException('Tahap 1 belum selesai');
-      if (await tx.usulinSignature.count({ where: { usulan_id: inovasiId, tahap } })) {
-        throw new ForbiddenException('Penilaian sudah ditandatangani');
-      }
-
       for (const cell of cellsToSave) {
         const existing = await tx.assessmentAnswer.findFirst({
           where: { inovasi_id: inovasiId, question_id: cell.question_id, tahap, source: 'PENILAI' },
@@ -1471,14 +1465,29 @@ export class InovasiService {
           });
         }
       }
+
+      const invalidated = await tx.usulinSignature.updateMany({
+        where: { usulan_id: inovasiId, tahap, invalidated_at: null },
+        data: { invalidated_at: new Date() },
+      });
+      invalidatedSignatures = invalidated.count;
+      if (invalidatedSignatures > 0) {
+        await tx.inovasi.update({
+          where: { id: inovasiId },
+          data: tahap === 2 ? { status_tahap2: StatusInovasi.PENDING } : { status: StatusInovasi.PENDING },
+        });
+      }
     });
 
     return {
-      message: skippedInactiveCells
-        ? 'Perubahan tersimpan; baris yang sudah dihapus dilewati.'
-        : 'Perubahan kolom berhasil tersimpan',
+      message: invalidatedSignatures > 0
+        ? 'Perubahan tersimpan; tanda tangan tahap ini dibatalkan dan perlu ditandatangani ulang.'
+        : skippedInactiveCells
+          ? 'Perubahan tersimpan; baris yang sudah dihapus dilewati.'
+          : 'Perubahan kolom berhasil tersimpan',
       updated_cells: cellsToSave.length,
       skipped_inactive_cells: skippedInactiveCells,
+      invalidated_signatures: invalidatedSignatures,
     };
   }
 
@@ -1516,8 +1525,6 @@ export class InovasiService {
     }
 
     if (tahap === 2 && inovasi.status !== StatusInovasi.SELESAI_EVALUASI) throw new BadRequestException('Tahap 1 belum selesai');
-    const signed = await this.prisma.usulinSignature.count({ where: { usulan_id: inovasiId, tahap } });
-    if (signed) throw new ForbiddenException('Penilaian sudah ditandatangani');
     const { columns } = await loadTemplateConfig(this.prisma, tahap);
     const assessmentAnswers = this.filterAnswersByOwner(dto.answers, columns, 'PENILAI');
     const headerIds = new Set((await this.prisma.assessmentQuestion.findMany({ where: { id: { in: assessmentAnswers.map((a) => a.question_id) }, is_header: true }, select: { id: true } })).map((q) => q.id));
@@ -1586,10 +1593,22 @@ export class InovasiService {
         });
       }
 
-      return tx.inovasi.findUnique({
+      const invalidated = await tx.usulinSignature.updateMany({
+        where: { usulan_id: inovasiId, tahap, invalidated_at: null },
+        data: { invalidated_at: new Date() },
+      });
+      if (invalidated.count > 0) {
+        await tx.inovasi.update({
+          where: { id: inovasiId },
+          data: tahap === 2 ? { status_tahap2: StatusInovasi.PENDING } : { status: StatusInovasi.PENDING },
+        });
+      }
+
+      const updated = await tx.inovasi.findUnique({
         where: { id: inovasiId },
         include: this.includeConfig,
       });
+      return updated ? { ...updated, invalidated_signatures: invalidated.count } : updated;
     });
   }
 
@@ -1904,11 +1923,17 @@ export class InovasiService {
     if (!dto.nip.trim()) throw new BadRequestException('NIP wajib diisi');
     if (!/^\d+$/.test(dto.nip)) throw new BadRequestException('NIP hanya boleh berisi angka');
     if (!dto.jabatan.trim()) throw new BadRequestException('Isi peran penanda tangan');
+    if (tahap === 1 && ![
+      'SKI',
+      'Timker Manajemen Risiko, Reformasi Birokrasi dan Monev',
+    ].includes(dto.jabatan.trim())) {
+      throw new BadRequestException('Tahap Awal hanya menyediakan peran SKI atau Timker Manajemen Risiko, Reformasi Birokrasi dan Monev.');
+    }
     return this.prisma.$transaction(async (tx) => {
       await tx.$queryRaw`SELECT id FROM "Inovasi" WHERE id = ${id} FOR UPDATE`;
       const inovasi = await tx.inovasi.findUnique({
         where: { id },
-        include: { penilai: { select: { id: true } }, penilai_tahap2: { select: { id: true } }, usulan_signatures: { where: { tahap }, select: { id: true } } },
+        include: { penilai: { select: { id: true } }, penilai_tahap2: { select: { id: true } }, usulan_signatures: { where: { tahap, invalidated_at: null }, select: { id: true } } },
       });
 
       if (!inovasi) {
@@ -1961,6 +1986,7 @@ export class InovasiService {
           usulan_id: id,
           user_id: user.sub,
           tahap,
+          invalidated_at: null,
         },
       });
 
@@ -1985,7 +2011,7 @@ export class InovasiService {
 
       // Hitung total tanda tangan dan total penilai yang ter-assign
       const totalSignatures = await tx.usulinSignature.count({
-        where: { usulan_id: id, tahap, user_id: { in: assigned.map((p) => p.id) } },
+        where: { usulan_id: id, tahap, invalidated_at: null, user_id: { in: assigned.map((p) => p.id) } },
       });
       const totalAssigned = (tahap === 2 ? inovasi.penilai_tahap2 : inovasi.penilai).length;
 
@@ -2012,12 +2038,19 @@ export class InovasiService {
       const inovasi = await tx.inovasi.findUnique({ where: { id }, include: { penilai: { select: { id: true } } } });
       if (!inovasi) throw new NotFoundException('Inovasi tidak ditemukan');
       if (!inovasi.penilai.some((p) => p.id === user.sub)) throw new ForbiddenException('Anda tidak ditugaskan sebagai penilai inovasi ini');
-      if (inovasi.status !== StatusInovasi.PENDING) {
-        throw new ForbiddenException('Usulan hanya dapat dikembalikan saat menunggu penilaian reviewer.');
+      const returnableStatuses: StatusInovasi[] = [StatusInovasi.PENDING, StatusInovasi.SELESAI_EVALUASI];
+      if (!returnableStatuses.includes(inovasi.status)) {
+        throw new ForbiddenException('Usulan hanya dapat dikembalikan saat menunggu penilaian atau setelah penilaian reviewer selesai.');
       }
       const snapshot = await this.captureRevisionSnapshot(tx, id);
       await tx.inovasiRevisionLog.create({
         data: { inovasi_id: id, requested_by_id: user.sub, catatan_perbaikan: note, snapshot },
+      });
+      // A return invalidates every reviewer signature for this stage. Keep the
+      // old rows for audit history; a fresh signature can be added after resubmission.
+      await tx.usulinSignature.updateMany({
+        where: { usulan_id: id, tahap: 1, invalidated_at: null },
+        data: { invalidated_at: new Date() },
       });
       return tx.inovasi.update({
         where: { id },
@@ -2055,10 +2088,11 @@ export class InovasiService {
         where: { id: { in: inovasiIds } },
         select: { id: true, status: true },
       });
-      const notReturnable = proposals.filter((proposal) => proposal.status !== StatusInovasi.PENDING);
+      const returnableStatuses: StatusInovasi[] = [StatusInovasi.PENDING, StatusInovasi.SELESAI_EVALUASI];
+      const notReturnable = proposals.filter((proposal) => !returnableStatuses.includes(proposal.status));
       if (notReturnable.length) {
         throw new BadRequestException(
-          `Hanya usulan berstatus sedang direview yang dapat dikembalikan. Periksa usulan: ${notReturnable.map(({ id }) => `#${id}`).join(', ')}.`,
+          `Hanya usulan yang sedang atau telah selesai direview yang dapat dikembalikan. Periksa usulan: ${notReturnable.map(({ id }) => `#${id}`).join(', ')}.`,
         );
       }
 
@@ -2073,8 +2107,13 @@ export class InovasiService {
       }
       await tx.inovasiRevisionLog.createMany({ data: revisionLogs });
 
+      await tx.usulinSignature.updateMany({
+        where: { usulan_id: { in: inovasiIds }, tahap: 1, invalidated_at: null },
+        data: { invalidated_at: new Date() },
+      });
+
       const updated = await tx.inovasi.updateMany({
-        where: { id: { in: inovasiIds }, status: StatusInovasi.PENDING },
+        where: { id: { in: inovasiIds }, status: { in: returnableStatuses } },
         data: { status: StatusInovasi.PERBAIKAN, catatan_perbaikan: note },
       });
       if (updated.count !== inovasiIds.length) {
@@ -2197,7 +2236,7 @@ export class InovasiService {
           status_tahap2: true,
           penilai: { select: { id: true } },
           penilai_tahap2: { select: { id: true } },
-          usulan_signatures: { select: { user_id: true, tahap: true, keputusan: true } },
+          usulan_signatures: { where: { invalidated_at: null }, select: { user_id: true, tahap: true, keputusan: true, invalidated_at: true } },
         },
       }),
       this.prisma.assessmentQuestion.findMany({

@@ -172,7 +172,14 @@ export default function Tahap1Usulan({ tahap = 1, mode = 'PENILAIAN' }: { tahap?
       setData(list)
       setMeta(body.meta ? { ...body.meta, totalPages: body.meta.total_pages ?? body.meta.totalPages } : body.pagination ?? { page, limit, total: 0, totalPages: 0 })
     } catch (err: unknown) {
-      setError(axios.isAxiosError(err) ? err.response?.data?.message || 'Gagal memuat data' : 'Terjadi kesalahan')
+      const apiMessage = axios.isAxiosError(err) ? err.response?.data?.message : null
+      setError(Array.isArray(apiMessage)
+        ? apiMessage.join(' ')
+        : typeof apiMessage === 'string'
+          ? apiMessage
+          : axios.isAxiosError(err)
+            ? err.response ? `Gagal memuat data (HTTP ${err.response.status})` : 'Server tidak dapat dihubungi. Periksa koneksi backend.'
+            : 'Terjadi kesalahan')
     } finally {
       setLoading(false)
     }

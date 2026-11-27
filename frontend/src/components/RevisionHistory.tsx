@@ -39,8 +39,8 @@ function RevisionIcon() {
 export default function RevisionHistory({ logs = [], fallbackNote }: { logs?: RevisionLog[]; fallbackNote?: string | null }) {
   if (!logs.length && !fallbackNote) return null
 
-  return <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
-    <header className="flex flex-col gap-3 border-b border-slate-100 bg-gradient-to-r from-amber-50 via-white to-white px-4 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-5">
+  return <details className="group overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+    <summary className="flex cursor-pointer list-none items-center justify-between gap-3 bg-gradient-to-r from-amber-50 via-white to-white px-4 py-4 outline-none transition hover:from-amber-100/70 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-amber-500 sm:px-5 [&::-webkit-details-marker]:hidden">
       <div className="flex min-w-0 items-center gap-3">
         <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-amber-100 text-amber-800">
           <RevisionIcon />
@@ -50,12 +50,17 @@ export default function RevisionHistory({ logs = [], fallbackNote }: { logs?: Re
           <p className="mt-0.5 text-sm text-slate-600">Catatan reviewer dan perubahan dari Satker.</p>
         </div>
       </div>
-      {logs.length > 0 && <span className="w-fit rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-semibold text-slate-600">
-        {logs.length} {logs.length === 1 ? 'siklus' : 'siklus perbaikan'}
-      </span>}
-    </header>
+      <span className="flex shrink-0 items-center gap-2">
+        {logs.length > 0 && <span className="rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-semibold text-slate-600">
+          {logs.length} {logs.length === 1 ? 'siklus' : 'siklus perbaikan'}
+        </span>}
+        <svg aria-hidden="true" viewBox="0 0 20 20" fill="currentColor" className="h-5 w-5 text-slate-400 transition group-open:rotate-180">
+          <path fillRule="evenodd" d="M5.23 7.21a.75.75 0 0 1 1.06.02L10 11.168l3.71-3.938a.75.75 0 1 1 1.09 1.03l-4.25 4.5a.75.75 0 0 1-1.09 0l-4.25-4.5a.75.75 0 0 1 .02-1.05Z" clipRule="evenodd" />
+        </svg>
+      </span>
+    </summary>
 
-    <div className="space-y-3 p-3 sm:p-4">
+    <div className="space-y-3 border-t border-slate-100 p-3 sm:p-4">
       {!logs.length && fallbackNote && <article className="rounded-xl border border-amber-200 bg-amber-50/60 p-4">
         <p className="text-xs font-bold uppercase tracking-wide text-amber-800">Catatan reviewer</p>
         <p className="mt-2 whitespace-pre-wrap break-words text-sm leading-6 text-slate-800">{fallbackNote}</p>
@@ -126,5 +131,5 @@ export default function RevisionHistory({ logs = [], fallbackNote }: { logs?: Re
         </details>
       })}
     </div>
-  </section>
+  </details>
 }
